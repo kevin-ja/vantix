@@ -88,11 +88,26 @@ def copy_logged_models(src: MlflowClient, dst: MlflowClient, src_exp: str, dst_e
     return model_map
 
 
-def copy_registry(src: MlflowClient, dst: MlflowClient, run_map: dict, model_map: dict) -> dict:
+def use_global(uri: str) -> None:
+    """Algunas operaciones dependen del MLflow global del proceso, no del cliente:
+    - el plugin sagemaker-mlflow autentica según el tracking URI global (debe ser el origen al leerlo);
+    - con un destino local (sqlite), el registry resuelve `models:/…` contra el global (debe ser el destino).
+    Las subidas de artefactos usan el tracking URI de su propio cliente."""
+    mlflow.set_tracking_uri(uri)
+    mlflow.set_registry_uri(uri)
+
+
+def copy_registry(src: MlflowClient, dst: MlflowClient, src_uri: str, dst_uri: str, run_map: dict,
+                  model_map: dict) -> dict:
+    # 1. Leer todo el registry del origen (global = origen) …
+    registry = [(rm, sorted(src.search_model_versions(f"name='{rm.name}'"), key=lambda v: int(v.version)))
+                for rm in src.search_registered_models()]
+    # 2. … y escribir en el destino. Un destino HTTP resuelve las fuentes en el servidor; uno local, con el global.
+    if not dst_uri.startswith(("http://", "https://")):
+        use_global(dst_uri)
     out = {}
-    for rm in src.search_registered_models():
+    for rm, versions in registry:
         dst.create_registered_model(rm.name, tags=rm.tags or None, description=rm.description)
-        versions = sorted(src.search_model_versions(f"name='{rm.name}'"), key=lambda v: int(v.version))
         out[rm.name] = {}
         for mv in versions:
             old_model = mv.source.removeprefix("models:/") if mv.source.startswith("models:/m-") else None
@@ -120,9 +135,7 @@ def main(argv=None) -> None:
     a = p.parse_args(argv)
 
     src, dst = MlflowClient(a.src), MlflowClient(a.dst)
-    # Las URIs `models:/…` del registry se resuelven contra el MLflow global: debe ser el destino.
-    mlflow.set_tracking_uri(a.dst)
-    mlflow.set_registry_uri(a.dst)
+    use_global(a.src)
     mapping = {"src": a.src, "dst": a.dst, "experiments": {}, "runs": {}, "logged_models": {}}
 
     for exp in src.search_experiments():
@@ -140,7 +153,7 @@ def main(argv=None) -> None:
         mapping["experiments"][exp.name] = {"src": exp.experiment_id, "dst": dst_exp, "runs": len(runs)}
         print(f"experimento {exp.name}: {len(runs)} runs")
 
-    mapping["registry"] = copy_registry(src, dst, mapping["runs"], mapping["logged_models"])
+    mapping["registry"] = copy_registry(src, dst, a.src, a.dst, mapping["runs"], mapping["logged_models"])
     Path(a.mapping_out).write_text(json.dumps(mapping, indent=2))
     print(f"runs: {len(mapping['runs'])} · logged models: {len(mapping['logged_models'])} · "
           f"modelos registrados: {list(mapping['registry'])} → {a.mapping_out}")
