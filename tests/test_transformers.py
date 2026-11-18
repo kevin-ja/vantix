@@ -18,7 +18,8 @@ def test_preprocessor_roundtrip_pickle():
     X = rng.lognormal(size=(500, 5))
     pre = build_preprocessor()
     Xt = pre.fit_transform(X)
-    assert Xt.min() >= 0 and Xt.max() <= 1
+    eps = 1e-9  # MinMax puede dar 1.0000000000000002 según la librería numérica (Linux vs. macOS)
+    assert Xt.min() >= -eps and Xt.max() <= 1 + eps
 
     loaded = pickle.loads(pickle.dumps(pre))
     X_new = rng.lognormal(size=(20, 5))
