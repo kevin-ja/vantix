@@ -39,12 +39,15 @@ services:
       - --artifacts-destination=s3://${MLFLOW_BUCKET:?}/${MLFLOW_ARTIFACTS_PREFIX:?}
       - --host=0.0.0.0
       - --port=5000
-      - --workers=2
+      - --workers=1           # equipo chico + SQLite (un escritor); cada worker ~200 MB
     environment:
       MLFLOW_AUTH_ADMIN_PASSWORD: ${MLFLOW_AUTH_ADMIN_PASSWORD:?}
       MLFLOW_FLASK_SERVER_SECRET_KEY: ${MLFLOW_FLASK_SERVER_SECRET_KEY:?}   # CSRF (basic auth)
       MLFLOW_SERVER_ALLOWED_HOSTS: ${MLFLOW_ALLOWED_HOSTS:?}
       AWS_DEFAULT_REGION: ${AWS_REGION:?}
+      # Jobs en segundo plano (Huey: evaluadores GenAI, tareas periódicas): no se usan y en 2 GB de RAM
+      # provocaban OOM. Ver docs/architecture.md §5.
+      MLFLOW_SERVER_ENABLE_JOB_EXECUTION: "false"
     volumes:
       - mlflow-data:/data
     ports:

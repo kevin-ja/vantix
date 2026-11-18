@@ -72,6 +72,10 @@ CloudFront (*.cloudfront.net, sin caché) ──HTTP:5000──▶ Elastic IP �
   origen va HTTP, con el header `Authorization` incluido. Mejora futura: dominio propio + TLS en el origen, o CloudFront
   VPC origin con la EC2 en subred privada.
 - **Basic auth.** Usuario y contraseña, sin SSO ni tokens con vencimiento.
+- **Memoria (t3.small, 2 GB).** 1 worker de MLflow y jobs en segundo plano desactivados
+  (`MLFLOW_SERVER_ENABLE_JOB_EXECUTION=false`). Con 2 workers + jobs (valores por defecto de MLflow 3.18) el
+  servidor se quedaba sin memoria (OOM). Sin jobs no funcionan las funciones de GenAI que los usan (p. ej.
+  evaluadores de LLM en el servidor); VANTIX no las usa. Hay 2 GB de swap como red de seguridad.
 
 ### Hacia el repo independiente (futuro)
 

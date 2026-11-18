@@ -3,6 +3,13 @@
 # no una persona. Todo lo variable viene de Terraform; nada se descarga sin versión fija.
 set -euxo pipefail
 
+# 0. Swap de 2 GB: red de seguridad ante picos de memoria (t3.small = 2 GB de RAM).
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap defaults 0 0' >> /etc/fstab
+
 # 1. Docker (versión fijada por la AMI: AL2023 bloquea los repos a su release) + Compose (versión + sha256)
 dnf install -y docker
 plugins=/usr/local/lib/docker/cli-plugins
