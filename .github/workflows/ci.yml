@@ -47,11 +47,11 @@ jobs:
           terraform_version: "1.15.8"   # misma versión que en local
 
       - name: Formato
-        run: terraform fmt -check -recursive infra
+        run: terraform fmt -check -recursive infra mlflow_server/infra
 
-      - name: Validación (shared, training, inference)
+      - name: Validación (shared, training, inference, mlflow_server)
         run: |
-          for layer in shared training inference; do
-            terraform -chdir=infra/$layer init -backend=false -input=false
-            terraform -chdir=infra/$layer validate
+          for dir in infra/shared infra/training infra/inference mlflow_server/infra; do
+            terraform -chdir=$dir init -backend=false -input=false
+            terraform -chdir=$dir validate
           done

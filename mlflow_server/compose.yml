@@ -1,0 +1,68 @@
+# MLflow tracking server desechable: el estado (registry + usuarios) vive en S3 vía Litestream.
+#   1. restore-*  : al arrancar, si /data está vacío, restaura las bases SQLite desde S3 (si hay réplica).
+#   2. mlflow     : servidor con basic auth; artefactos por proxy a S3 (los clientes no necesitan credenciales S3).
+#   3. replicate  : replica cada cambio de las bases a S3 (segundos).
+# Variables: ver example.env. Las escribe el arranque de la EC2 (infra/user_data.sh.tftpl).
+# Credenciales de AWS: las del rol de la EC2 (IMDSv2), nunca llaves en archivos.
+
+x-litestream: &litestream
+  image: litestream/litestream:0.3.13@sha256:027eda2a89a86015b9797d2129d4dd447e8953097b4190e1d5a30b73e76d8d58
+  volumes:
+    - mlflow-data:/data
+    - ./litestream.yml:/etc/litestream.yml:ro
+  environment:
+    MLFLOW_BUCKET: ${MLFLOW_BUCKET:?}
+    MLFLOW_REGISTRY_PREFIX: ${MLFLOW_REGISTRY_PREFIX:?}
+    AWS_REGION: ${AWS_REGION:?}
+
+services:
+  restore-registry:
+    <<: *litestream
+    command: [restore, -config, /etc/litestream.yml, -if-db-not-exists, -if-replica-exists, /data/mlflow.db]
+    restart: "no"
+
+  restore-auth:
+    <<: *litestream
+    command: [restore, -config, /etc/litestream.yml, -if-db-not-exists, -if-replica-exists, /data/basic_auth.db]
+    restart: "no"
+
+  mlflow:
+    image: ${MLFLOW_IMAGE:?}
+    depends_on:
+      restore-registry: { condition: service_completed_successfully }
+      restore-auth: { condition: service_completed_successfully }
+    command:
+      - server
+      - --app-name=basic-auth
+      - --backend-store-uri=sqlite:////data/mlflow.db
+      - --serve-artifacts
+      - --artifacts-destination=s3://${MLFLOW_BUCKET:?}/${MLFLOW_ARTIFACTS_PREFIX:?}
+      - --host=0.0.0.0
+      - --port=5000
+      - --workers=2
+    environment:
+      MLFLOW_AUTH_ADMIN_PASSWORD: ${MLFLOW_AUTH_ADMIN_PASSWORD:?}
+      MLFLOW_SERVER_ALLOWED_HOSTS: ${MLFLOW_ALLOWED_HOSTS:?}
+      AWS_DEFAULT_REGION: ${AWS_REGION:?}
+    volumes:
+      - mlflow-data:/data
+    ports:
+      - "5000:5000"
+    healthcheck:
+      # /health no exige auth.
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:5000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  replicate:
+    <<: *litestream
+    command: [replicate, -config, /etc/litestream.yml]
+    depends_on:
+      mlflow: { condition: service_healthy }   # las bases ya existen
+    restart: unless-stopped
+
+volumes:
+  mlflow-data:

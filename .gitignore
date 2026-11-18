@@ -47,6 +47,6 @@ HANDOFF.md
 # Fuera del versionado
 reporte.md
 train_raw_pipeline.py
-docs/
+/docs/
 .DS_Store
 .ipynb_checkpoints/
