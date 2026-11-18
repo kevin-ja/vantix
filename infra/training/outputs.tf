@@ -6,8 +6,12 @@ output "data_bucket" {
   value = local.shared.data_bucket
 }
 
-output "mlflow_tracking_arn" {
-  value = local.shared.mlflow_tracking_arn
+output "mlflow_tracking_uri" {
+  value = local.shared.mlflow_tracking_uri
+}
+
+output "mlflow_password_param" {
+  value = local.shared.mlflow_password_param
 }
 
 output "region" {

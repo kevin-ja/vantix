@@ -6,7 +6,8 @@ MLflow:
 
 Local:      python -m pipelines.training.steps.train --features-dir .local/prepare/features \
                 --metadata-dir .local/prepare/metadata --tracking-uri sqlite:///.local/mlflow.db
-SageMaker:  canales SM_CHANNEL_FEATURES / SM_CHANNEL_METADATA y MLFLOW_TRACKING_URI (ARN del servidor).
+SageMaker:  canales SM_CHANNEL_FEATURES / SM_CHANNEL_METADATA, MLFLOW_TRACKING_URI (URL del servidor propio) y
+            MLFLOW_TRACKING_PASSWORD_PARAM (parámetro SSM con la contraseña; ver pipelines/common/mlflow_auth.py).
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ from sklearn.cluster import KMeans  # noqa: E402
 
 from pipelines.common.config import FEATURE_COLS  # noqa: E402
 from pipelines.common.io import resolve_input  # noqa: E402
+from pipelines.common.mlflow_auth import configure_credentials  # noqa: E402
 from pipelines.common.transformers import build_preprocessor  # noqa: E402
 from pipelines.training.evaluation import cluster_profile, clustering_metrics  # noqa: E402
 
@@ -77,6 +79,7 @@ def main(argv=None) -> None:
     Xt = preprocessor.fit_transform(X)
     log.info("matriz de entrenamiento %s", Xt.shape)
 
+    configure_credentials(a.tracking_uri)
     mlflow.set_tracking_uri(a.tracking_uri)
     mlflow.set_experiment(a.experiment)
 

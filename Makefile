@@ -7,8 +7,8 @@
 #   make down-inference    baja solo inference (shared queda)
 #   make down-shared       baja S3/MLflow (pide CONFIRM=yes)
 #   make down-all          baja todo (pide CONFIRM=yes)
-# MLflow (USD 0,60/h encendido)
-#   make mlflow-stop | mlflow-start | mlflow-status
+# MLflow propio (EC2 de mlflow_server/; ~USD 0,03/h encendido, arranca en ~30 s)
+#   make mlflow-start | mlflow-stop | mlflow-status
 # Datos y pipeline de entrenamiento
 #   make upload-raw        data/data.csv -> Parquet -> s3://.../raw/ingest_date=$(INGEST_DATE)/
 #   make pipeline-upsert   crea/actualiza el pipeline en SageMaker
@@ -129,18 +129,26 @@ down-all:
 	$(MAKE) down-training down-inference
 	$(MAKE) down-shared CONFIRM=yes
 
-# --- MLflow ------------------------------------------------------------------
-MLFLOW_SERVER := vantix-mlflow
-
-mlflow-stop:
-	aws sagemaker stop-mlflow-tracking-server --tracking-server-name $(MLFLOW_SERVER) --region $(REGION)
+# --- MLflow propio (mlflow_server/): la EC2 se busca por su tag Name (el id cambia al reemplazarse) ----
+MLFLOW_INSTANCE_NAME := vantix-mlflow-server
+MLFLOW_INSTANCE = $(shell aws ec2 describe-instances --profile $(AWS_PROFILE) --region $(REGION) \
+	--filters Name=tag:Name,Values=$(MLFLOW_INSTANCE_NAME) Name=instance-state-name,Values=pending,running,stopping,stopped \
+	--query 'Reservations[0].Instances[0].InstanceId' --output text)
+MLFLOW_URI = $(call tf_output,shared,mlflow_tracking_uri)
+# Clientes locales: la contraseña se lee de SSM (pipelines/common/mlflow_auth.py).
+MLFLOW_ENV = MLFLOW_TRACKING_URI=$(MLFLOW_URI) MLFLOW_TRACKING_PASSWORD_PARAM=$(call tf_output,shared,mlflow_password_param)
 
 mlflow-start:
-	aws sagemaker start-mlflow-tracking-server --tracking-server-name $(MLFLOW_SERVER) --region $(REGION)
+	aws ec2 start-instances --instance-ids $(MLFLOW_INSTANCE) --region $(REGION) --query 'StartingInstances[0].CurrentState.Name' --output text
+	@for i in $$(seq 1 40); do [ "$$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 $(MLFLOW_URI)/health)" = 200 ] && \
+		{ echo "MLflow listo: $(MLFLOW_URI)"; exit 0; }; sleep 5; done; echo "MLflow no respondió"; exit 1
+
+mlflow-stop:
+	aws ec2 stop-instances --instance-ids $(MLFLOW_INSTANCE) --region $(REGION) --query 'StoppingInstances[0].CurrentState.Name' --output text
 
 mlflow-status:
-	@aws sagemaker describe-mlflow-tracking-server --tracking-server-name $(MLFLOW_SERVER) --region $(REGION) \
-		--query '{status:TrackingServerStatus,url:TrackingServerUrl}' --output table
+	@echo "EC2:    $$(aws ec2 describe-instances --instance-ids $(MLFLOW_INSTANCE) --region $(REGION) --query 'Reservations[0].Instances[0].State.Name' --output text)"
+	@echo "MLflow: $$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 $(MLFLOW_URI)/health) (200 = arriba) · $(MLFLOW_URI)"
 
 # --- trazabilidad: solo se sube a SageMaker código commiteado y pusheado ----------------
 # El git_commit que registran MLflow y summary.json debe existir en GitHub (docs/arch_mlops.md).
@@ -154,7 +162,8 @@ check-clean:
 # --- datos y pipeline ----------------------------------------------------------
 TRAINING_ENV = VANTIX_BUCKET=$(call tf_output,training,data_bucket) \
                VANTIX_ROLE_ARN=$(call tf_output,training,training_role_arn) \
-               VANTIX_MLFLOW_ARN=$(call tf_output,training,mlflow_tracking_arn) \
+               VANTIX_MLFLOW_URI=$(call tf_output,training,mlflow_tracking_uri) \
+               VANTIX_MLFLOW_PASSWORD_PARAM=$(call tf_output,training,mlflow_password_param) \
                VANTIX_REGION=$(REGION)
 
 upload-raw:
@@ -171,13 +180,13 @@ pipeline-run: check-clean
 
 promote:
 	@test -n "$(RUN_ID)" -a -n "$(SEGMENT_MAP)" -a -n "$(REASON)" || { echo 'Uso: make promote RUN_ID=<run hijo> SEGMENT_MAP=segment_maps/<snapshot>_k<k>.json REASON="…"'; exit 1; }
-	MLFLOW_TRACKING_URI=$(call tf_output,training,mlflow_tracking_arn) \
+	$(MLFLOW_ENV) \
 		$(PY) -m pipelines.training.promote --run-id $(RUN_ID) --segment-map $(SEGMENT_MAP) --reason "$(REASON)" \
 		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
 
 rollback:
 	@test -n "$(VERSION)" -a -n "$(REASON)" || { echo 'Uso: make rollback VERSION=<versión del registry> REASON="…"'; exit 1; }
-	MLFLOW_TRACKING_URI=$(call tf_output,training,mlflow_tracking_arn) \
+	$(MLFLOW_ENV) \
 		$(PY) -m pipelines.training.promote --version $(VERSION) --reason "$(REASON)" \
 		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
 
@@ -185,7 +194,7 @@ benchmark-freeze:
 	$(PY) scripts/freeze_benchmark.py --bucket $(call tf_output,shared,data_bucket)
 
 promote-export:
-	MLFLOW_TRACKING_URI=$(call tf_output,training,mlflow_tracking_arn) \
+	$(MLFLOW_ENV) \
 		$(PY) -m pipelines.training.promote --export-only \
 		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
 

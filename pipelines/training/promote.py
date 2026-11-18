@@ -40,6 +40,7 @@ from pipelines.common.champion import (
     SEGMENT_MAP_FILE,
     load_champion,
 )
+from pipelines.common.mlflow_auth import configure_credentials
 
 MODEL_NAME = "vantix-segmentation"
 ALIAS = "champion"
@@ -147,6 +148,7 @@ def main(argv=None) -> None:
     if not a.export_uri:
         p.error("falta --export-uri (o VANTIX_CHAMPION_URI)")
 
+    configure_credentials(a.tracking_uri)
     mlflow.set_tracking_uri(a.tracking_uri)
     client = MlflowClient()
     if a.run_id:

@@ -36,16 +36,12 @@ resource "aws_iam_role" "github_promote" {
 }
 
 data "aws_iam_policy_document" "github_promote" {
-  # Encender/apagar MLflow y registrar la versión (alias, tags).
+  # Encender/apagar el MLflow propio y leer su contraseña (registrar la versión, alias, tags).
+  source_policy_documents = [data.aws_iam_policy_document.mlflow_power.json]
   statement {
-    sid = "MLflow"
-    actions = [
-      "sagemaker-mlflow:*",
-      "sagemaker:DescribeMlflowTrackingServer",
-      "sagemaker:StartMlflowTrackingServer",
-      "sagemaker:StopMlflowTrackingServer",
-    ]
-    resources = [aws_sagemaker_mlflow_tracking_server.this.arn]
+    sid       = "MLflowPassword"
+    actions   = ["ssm:GetParameter"]
+    resources = [local.mlflow_password_param_arn]
   }
   statement {
     sid       = "ListData"
@@ -147,21 +143,9 @@ resource "aws_iam_role_policy" "github_pipeline" {
   policy   = data.aws_iam_policy_document.github_pipeline[each.key].json
 }
 
-# train.yml enciende MLflow si está apagado (el paso Train registra en él) y lo apaga al terminar.
-data "aws_iam_policy_document" "github_train_mlflow" {
-  statement {
-    sid = "MLflowPower"
-    actions = [
-      "sagemaker:DescribeMlflowTrackingServer",
-      "sagemaker:StartMlflowTrackingServer",
-      "sagemaker:StopMlflowTrackingServer",
-    ]
-    resources = [aws_sagemaker_mlflow_tracking_server.this.arn]
-  }
-}
-
+# train.yml enciende el MLflow propio si está apagado (el paso Train registra en él) y lo apaga al terminar.
 resource "aws_iam_role_policy" "github_train_mlflow" {
   name   = "mlflow-power"
   role   = aws_iam_role.github_pipeline["train"].id
-  policy = data.aws_iam_policy_document.github_train_mlflow.json
+  policy = data.aws_iam_policy_document.mlflow_power.json
 }

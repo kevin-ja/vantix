@@ -28,3 +28,14 @@ variable "github_repo" {
   type        = string
   default     = "kevin-ja@176353864/vantix@1463070333"
 }
+
+variable "state_bucket" {
+  description = "Bucket del estado de Terraform (lo pasa el Makefile). Se usa para leer el estado de mlflow_server/."
+  type        = string
+}
+
+variable "mlflow_name" {
+  description = "NAME con el que se levantó mlflow_server/ (prefijo de sus recursos)."
+  type        = string
+  default     = "vantix-mlflow"
+}

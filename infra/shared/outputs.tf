@@ -40,3 +40,20 @@ output "github_train_role_arn" {
 output "github_deploy_inference_role_arn" {
   value = aws_iam_role.github_pipeline["deploy-inference"].arn
 }
+
+# Servidor de MLflow propio (mlflow_server/).
+output "mlflow_tracking_uri" {
+  value = local.mlflow_tracking_uri
+}
+
+output "mlflow_password_param" {
+  value = local.mlflow_password_param
+}
+
+output "mlflow_password_param_arn" {
+  value = local.mlflow_password_param_arn
+}
+
+output "mlflow_instance_name" {
+  value = local.mlflow_instance_name
+}

@@ -7,7 +7,7 @@ para cambiar de orquestador basta con reescribir este archivo.
     python -m pipelines.training.pipeline_sagemaker run --ingest-date 2025-04-30 --snapshot-date 2025-04-30
 
 Config por variables de entorno (las pone el Makefile desde los outputs de Terraform):
-    VANTIX_BUCKET, VANTIX_ROLE_ARN, VANTIX_MLFLOW_ARN, VANTIX_REGION, AWS_PROFILE
+    VANTIX_BUCKET, VANTIX_ROLE_ARN, VANTIX_MLFLOW_URI, VANTIX_MLFLOW_PASSWORD_PARAM, VANTIX_REGION, AWS_PROFILE
 """
 from __future__ import annotations
 
@@ -36,7 +36,8 @@ PIPELINE_NAME = "vantix-training"
 TRAINING_INSTANCE = "ml.m5.xlarge"     # cuota solicitada: 1 (en revisión; hoy Train usa PROCESSING_INSTANCE)
 
 
-def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_arn: str) -> Pipeline:
+def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri: str, mlflow_password_param: str,
+                   region: str) -> Pipeline:
     ingest_date = ParameterString("IngestDate", default_value="2025-04-30")
     snapshot_date = ParameterString("SnapshotDate", default_value="2025-04-30")
     window_days = ParameterInteger("WindowDays", default_value=30)
@@ -96,7 +97,13 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_arn:
         base_job_name="vantix-train",
         sagemaker_session=session,
         code_location=f"s3://{bucket}/pipelines/code",
-        env={"MLFLOW_TRACKING_URI": mlflow_arn},
+        # Servidor propio (mlflow_server/): la contraseña se lee de SSM en el job con el rol de ejecución.
+        env={
+            "MLFLOW_TRACKING_URI": mlflow_uri,
+            "MLFLOW_TRACKING_USERNAME": "admin",
+            "MLFLOW_TRACKING_PASSWORD_PARAM": mlflow_password_param,
+            "AWS_DEFAULT_REGION": region,
+        },
     )
     outputs = step_prepare.properties.ProcessingOutputConfig.Outputs
     train_out = Join(on="", values=[f"s3://{bucket}/pipelines/training-output/snapshot_date=", snapshot_date])
@@ -141,12 +148,13 @@ def main(argv=None) -> None:
     run.add_argument("--k-max", type=int, default=10)
     a = p.parse_args(argv)
 
-    bucket, role, mlflow_arn = env("VANTIX_BUCKET"), env("VANTIX_ROLE_ARN"), env("VANTIX_MLFLOW_ARN")
-    boto_session = boto3.Session(profile_name=os.environ.get("AWS_PROFILE"),
-                                 region_name=os.environ.get("VANTIX_REGION", "us-east-1"))
+    bucket, role = env("VANTIX_BUCKET"), env("VANTIX_ROLE_ARN")
+    mlflow_uri, mlflow_password_param = env("VANTIX_MLFLOW_URI"), env("VANTIX_MLFLOW_PASSWORD_PARAM")
+    region = os.environ.get("VANTIX_REGION", "us-east-1")
+    boto_session = boto3.Session(profile_name=os.environ.get("AWS_PROFILE"), region_name=region)
     session = PipelineSession(boto_session=boto_session, default_bucket=bucket, default_bucket_prefix="pipelines")
 
-    pipeline = build_pipeline(session, bucket, role, mlflow_arn)
+    pipeline = build_pipeline(session, bucket, role, mlflow_uri, mlflow_password_param, region)
     pipeline.upsert(role_arn=role)
     print(f"Pipeline {PIPELINE_NAME} actualizado")
 
