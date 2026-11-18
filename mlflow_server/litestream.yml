@@ -1,0 +1,21 @@
+# Litestream: replica continua de las bases SQLite de MLflow a S3 (fuente de verdad del estado).
+# Las variables ${...} las expande Litestream desde el entorno del contenedor (ver compose.yml).
+# Credenciales: rol de la EC2 (cadena por defecto del SDK de AWS).
+dbs:
+  - path: /data/mlflow.db           # backend store: experimentos, runs, Model Registry
+    replicas:
+      - type: s3
+        bucket: ${MLFLOW_BUCKET}
+        path: ${MLFLOW_REGISTRY_PREFIX}/mlflow.db
+        region: ${AWS_REGION}
+        sync-interval: 1s
+        retention: 168h             # 7 días de historial para restaurar a un punto anterior
+
+  - path: /data/basic_auth.db       # usuarios y permisos
+    replicas:
+      - type: s3
+        bucket: ${MLFLOW_BUCKET}
+        path: ${MLFLOW_REGISTRY_PREFIX}/basic_auth.db
+        region: ${AWS_REGION}
+        sync-interval: 1s
+        retention: 168h

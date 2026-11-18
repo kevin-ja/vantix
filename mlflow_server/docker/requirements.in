@@ -1,0 +1,3 @@
+# Dependencias directas del servidor. El lock (requirements.txt) se genera con: make lock
+mlflow[auth]==3.18.0
+boto3==1.40.70

@@ -1,0 +1,3 @@
+# Dependencias directas de los tests. El lock (requirements.txt) se genera con: make lock
+mlflow==3.18.0
+pytest==8.4.2

@@ -24,6 +24,8 @@
 # Local
 #   make venv | test | lint | train-local
 #   make promote-local RUN_ID=… SEGMENT_MAP=… REASON="…"   | inference-local
+# MLflow propio (mlflow_server/, ver mlflow_server/README.md)
+#   make mlflow-server-<target>   p. ej. mlflow-server-up | -start | -stop | -status | -smoke | -recreate-test
 # Docs
 #   make docs-env | diagrams    venv + Graphviz locales en docs/ -> docs/img/*.png
 #
@@ -51,7 +53,7 @@ export TF_VAR_aws_profile = $(AWS_PROFILE)
 export TF_VAR_region      = $(REGION)
 
 # Se evalúa una sola vez y solo si un target lo necesita (make help no llama a AWS).
-ACCOUNT_ID   = $(eval ACCOUNT_ID := $(shell aws sts get-caller-identity --query Account --output text))$(ACCOUNT_ID)
+ACCOUNT_ID   = $(eval ACCOUNT_ID := $(shell aws sts get-caller-identity --profile $(AWS_PROFILE) --query Account --output text))$(ACCOUNT_ID)
 STATE_BUCKET = vantix-$(ACCOUNT_ID)-tfstate
 export TF_VAR_state_bucket = $(STATE_BUCKET)
 
@@ -61,7 +63,7 @@ export TF_VAR_state_bucket = $(STATE_BUCKET)
         venv test lint train-local promote-local inference-local docs-env diagrams
 
 help:
-	@sed -n '3,31p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,33p' Makefile | sed 's/^# \{0,1\}//'
 
 login:
 	aws sso login --profile $(AWS_PROFILE)
@@ -218,7 +220,7 @@ test:
 
 lint:
 	.venv/bin/ruff check .
-	$(TF) fmt -check -recursive $(INFRA)
+	$(TF) fmt -check -recursive $(INFRA) mlflow_server/infra
 
 # Corrida completa en local (sin AWS): MLflow en .local/mlflow.db (mlflow ui --backend-store-uri sqlite:///.local/mlflow.db)
 train-local:
@@ -259,3 +261,9 @@ docs-env:
 diagrams:
 	PATH="$(CURDIR)/$(GRAPHVIZ):$$PATH" $(DOCS_PY) docs/training_pipeline_diagram.py
 	PATH="$(CURDIR)/$(GRAPHVIZ):$$PATH" $(DOCS_PY) docs/inference_pipeline_diagram.py
+
+# --- MLflow propio: delega en mlflow_server/Makefile (autocontenido) ------------------------
+mlflow-server-%:
+	$(MAKE) -C mlflow_server $* NAME=vantix-mlflow AWS_PROFILE=$(AWS_PROFILE) REGION=$(REGION) \
+		STATE_BUCKET=$(STATE_BUCKET)
+
