@@ -6,7 +6,8 @@
 #
 # Requisitos en GitHub:
 #   - environment "production" con aprobador obligatorio (Settings → Environments)
-#   - variables del environment: GH_PROMOTE_ROLE_ARN (rol OIDC), DATA_BUCKET, MLFLOW_TRACKING_ARN
+#   - variables del environment: GH_PROMOTE_ROLE_ARN (rol OIDC), DATA_BUCKET, MLFLOW_TRACKING_URI,
+#     MLFLOW_PASSWORD_PARAM (nombre del parámetro SSM; la contraseña se lee en runtime con el rol OIDC)
 name: promote
 
 on:
@@ -44,8 +45,9 @@ jobs:
     timeout-minutes: 60
     env:
       AWS_REGION: us-east-1
-      MLFLOW_SERVER: vantix-mlflow
-      MLFLOW_TRACKING_URI: ${{ vars.MLFLOW_TRACKING_ARN }}
+      MLFLOW_INSTANCE_NAME: vantix-mlflow-server   # tag Name de la EC2 (el id cambia al reemplazarse)
+      MLFLOW_TRACKING_URI: ${{ vars.MLFLOW_TRACKING_URI }}
+      MLFLOW_TRACKING_PASSWORD_PARAM: ${{ vars.MLFLOW_PASSWORD_PARAM }}
       EXPORT_URI: s3://${{ vars.DATA_BUCKET }}/models/champion
       # Los inputs pasan por variables de entorno (nunca interpolados en el shell).
       ACTION: ${{ inputs.action }}
@@ -72,19 +74,20 @@ jobs:
       - name: Encender MLflow (si está apagado)
         id: mlflow
         run: |
-          status=$(aws sagemaker describe-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER" \
-            --query TrackingServerStatus --output text)
-          if [ "$status" = "Stopped" ]; then
-            aws sagemaker start-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER"
+          read -r id state < <(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$MLFLOW_INSTANCE_NAME" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+            --query 'Reservations[0].Instances[0].[InstanceId,State.Name]' --output text)
+          echo "instance=$id" >> "$GITHUB_OUTPUT"
+          if [ "$state" = "stopping" ]; then aws ec2 wait instance-stopped --instance-ids "$id"; state=stopped; fi
+          if [ "$state" = "stopped" ]; then
+            aws ec2 start-instances --instance-ids "$id" > /dev/null
             echo "started=true" >> "$GITHUB_OUTPUT"
           fi
-          for _ in $(seq 1 80); do
-            status=$(aws sagemaker describe-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER" \
-              --query TrackingServerStatus --output text)
-            [ "$status" = "Started" ] && exit 0
-            sleep 15
+          for _ in $(seq 1 60); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$MLFLOW_TRACKING_URI/health")" = 200 ] && exit 0
+            sleep 5
           done
-          echo "MLflow no arrancó (estado: $status)"; exit 1
+          echo "MLflow no respondió en $MLFLOW_TRACKING_URI"; exit 1
 
       - name: Promover o hacer rollback
         run: |
@@ -101,4 +104,4 @@ jobs:
 
       - name: Apagar MLflow (solo si lo encendió este workflow)
         if: always() && steps.mlflow.outputs.started == 'true'
-        run: aws sagemaker stop-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER"
+        run: aws ec2 stop-instances --instance-ids "${{ steps.mlflow.outputs.instance }}" > /dev/null

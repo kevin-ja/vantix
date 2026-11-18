@@ -61,11 +61,11 @@ data "aws_iam_policy_document" "training" {
     resources = ["arn:aws:sagemaker:${var.region}:${local.account_id}:*"]
   }
 
-  # Los jobs registran en MLflow.
+  # Los jobs registran en el MLflow propio: leen su contraseña de SSM (pipelines/common/mlflow_auth.py).
   statement {
-    sid       = "MLflow"
-    actions   = ["sagemaker-mlflow:*", "sagemaker:DescribeMlflowTrackingServer"]
-    resources = [local.shared.mlflow_tracking_arn]
+    sid       = "MLflowPassword"
+    actions   = ["ssm:GetParameter"]
+    resources = [local.shared.mlflow_password_param_arn]
   }
 
   # Imágenes oficiales de scikit-learn (ECR de AWS).
