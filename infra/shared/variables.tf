@@ -20,7 +20,11 @@ variable "mlflow_server_size" {
 }
 
 variable "github_repo" {
-  description = "Repositorio (owner/nombre) cuyos workflows pueden asumir roles vía OIDC."
+  description = <<-EOT
+    Repositorio cuyos workflows pueden asumir roles vía OIDC, tal como lo envía GitHub en el claim `sub`:
+    owner@<id>/repo@<id> (IDs inmutables; un repo recreado con el mismo nombre tiene otro id y no entra).
+    IDs: gh api repos/kevin-ja/vantix --jq '"\(.owner.login)@\(.owner.id)/\(.name)@\(.id)"'
+  EOT
   type        = string
-  default     = "kevin-ja/vantix"
+  default     = "kevin-ja@176353864/vantix@1463070333"
 }
