@@ -13,12 +13,13 @@ echo "${compose_sha256}  $plugins/docker-compose" | sha256sum -c -
 chmod +x "$plugins/docker-compose"
 systemctl enable --now docker
 
-# 2. Archivos del servidor (los mismos del repo) + variables. La contraseña viene de SSM, no de user_data.
+# 2. Archivos del servidor (los mismos del repo) + variables. Los secretos vienen de SSM, no de user_data.
 mkdir -p /opt/mlflow
 echo "${compose_b64}" | base64 -d > /opt/mlflow/compose.yml
 echo "${litestream_b64}" | base64 -d > /opt/mlflow/litestream.yml
-password=$(aws ssm get-parameter --region "${region}" --name "${password_param}" --with-decryption \
-  --query Parameter.Value --output text)
+secret() { aws ssm get-parameter --region "${region}" --name "$1" --with-decryption --query Parameter.Value --output text; }
+password=$(secret "${password_param}")
+secret_key=$(secret "${secret_key_param}")
 umask 077
 cat > /opt/mlflow/.env <<EOF
 MLFLOW_IMAGE=${image_uri}
@@ -28,6 +29,7 @@ MLFLOW_REGISTRY_PREFIX=${registry_prefix}
 MLFLOW_ALLOWED_HOSTS=${allowed_host},localhost*,127.0.0.1*
 AWS_REGION=${region}
 MLFLOW_AUTH_ADMIN_PASSWORD=$password
+MLFLOW_FLASK_SERVER_SECRET_KEY=$secret_key
 EOF
 umask 022
 

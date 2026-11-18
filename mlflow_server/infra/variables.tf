@@ -28,7 +28,7 @@ variable "availability_zone" {
 }
 
 variable "image_tag" {
-  description = "Tag inmutable de la imagen en ECR (commit de git de mlflow_server/; lo pasa el Makefile)."
+  description = "Tag inmutable de la imagen en ECR (commit de git de mlflow_server/docker/; lo pasa el Makefile)."
   type        = string
 }
 

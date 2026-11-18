@@ -29,13 +29,13 @@ CloudFront (*.cloudfront.net, sin caché) ──HTTP:5000──▶ Elastic IP �
 | Pieza | Recurso | Detalle |
 |---|---|---|
 | Servidor | EC2 `t3.small`, Amazon Linux 2023 | Docker Compose: `restore-registry`, `restore-auth`, `mlflow`, `replicate` (`compose.yml`) |
-| Imagen | ECR (tags inmutables = commit de `mlflow_server/`) | `docker/Dockerfile`: MLflow 3.18.0 + basic auth |
+| Imagen | ECR (tags inmutables = commit de `mlflow_server/docker/`) | `docker/Dockerfile`: MLflow 3.18.0 + basic auth |
 | Registry y usuarios | SQLite en el disco de la EC2 + **réplica continua en S3** (Litestream) | `litestream.yml`; 7 días de historial (restauración a un punto anterior) |
 | Artefactos | S3 (`artifacts/`) | `--serve-artifacts`: los clientes suben y bajan a través del servidor, sin credenciales de S3 |
 | HTTPS | CloudFront con certificado por defecto | Sin dominio propio. Sin caché (TTL 0). Reenvía `Authorization` |
 | Red | VPC por defecto. Al puerto 5000 solo entra CloudFront (prefix list administrada) | Sin SSH: administración por SSM (`make shell`, `make logs`) |
 | IP fija | Elastic IP | El origen de CloudFront no cambia al apagar o reemplazar la EC2 |
-| Autenticación | Basic auth de MLflow; contraseña de `admin` en SSM Parameter Store (SecureString) | La genera Terraform; se usa al crear la base de usuarios |
+| Autenticación | Basic auth de MLflow; contraseña de `admin` y clave CSRF de Flask en SSM Parameter Store (SecureString) | Las genera Terraform; la clave es fija para que las sesiones sobrevivan al reemplazo de la EC2 |
 | IaC | Terraform (`infra/`), estado en S3 | La EC2 se **reemplaza** si cambia la imagen o la configuración |
 
 ## 3. Reproducibilidad (100 % fijado)
@@ -47,7 +47,7 @@ CloudFront (*.cloudfront.net, sin caché) ──HTTP:5000──▶ Elastic IP �
 | Terraform y providers | versión exacta + `.terraform.lock.hcl` con hashes |
 | Sistema operativo | **AMI fija** (`ami_id`); AL2023 bloquea los repos a la release de la AMI |
 | Docker Compose | versión fija, verificada por **sha256** |
-| Imagen desplegada | tag inmutable = commit de git de `mlflow_server/` |
+| Imagen desplegada | tag inmutable = commit de git de `mlflow_server/docker/` |
 
 ## 4. Operación (todo por `make`, ver `README.md`)
 
