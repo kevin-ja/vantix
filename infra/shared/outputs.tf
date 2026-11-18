@@ -31,3 +31,12 @@ output "mlflow_tracking_url" {
 output "github_promote_role_arn" {
   value = aws_iam_role.github_promote.arn
 }
+
+# Variables AWS_ROLE_ARN de train.yml y deploy-inference.yml.
+output "github_train_role_arn" {
+  value = aws_iam_role.github_pipeline["train"].arn
+}
+
+output "github_deploy_inference_role_arn" {
+  value = aws_iam_role.github_pipeline["deploy-inference"].arn
+}
