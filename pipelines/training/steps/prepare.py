@@ -34,7 +34,8 @@ def parse_args(argv=None):
     p.add_argument("--output-dir", required=True)
     p.add_argument("--snapshot-date", required=True, help="YYYY-MM-DD; Recency se calcula contra esta fecha")
     p.add_argument("--window-days", type=int, default=30)
-    p.add_argument("--reference-rows", type=int, default=0, help="Filas de la corrida anterior (0 = no validar volumen)")
+    p.add_argument("--reference-rows", type=int, default=0,
+                   help="Filas de la corrida anterior (0 = no validar volumen)")
     p.add_argument("--raw-uri", default="", help="URI de origen, solo para trazabilidad")
     return p.parse_args(argv)
 

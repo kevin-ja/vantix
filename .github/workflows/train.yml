@@ -1,0 +1,117 @@
+# Reentrenamiento (docs/arch_mlops.md §7): siempre manual. Actualiza y ejecuta el pipeline vantix-training con
+# el código de main. Enciende MLflow si está apagado (el paso Train registra en él), espera a que termine y lo
+# apaga, salvo que se pida dejarlo encendido para que el especialista evalúe enseguida.
+# Después: el especialista evalúa en MLflow contra models/benchmark/ y promueve con promote.yml.
+name: train
+
+on:
+  workflow_dispatch:
+    inputs:
+      ingest_date:
+        description: "Partición de raw/ (ingest_date=…)"
+        required: true
+      snapshot_date:
+        description: "Fecha de corte de las features (YYYY-MM-DD)"
+        required: true
+      window_days:
+        description: "Ventana en días"
+        default: "30"
+      k_min:
+        default: "2"
+      k_max:
+        default: "10"
+      keep_mlflow_on:
+        description: "Dejar MLflow encendido al terminar (USD 0,60/h)"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: train
+
+defaults:
+  run:
+    shell: bash   # -eo pipefail: si el comando antes de `| tee` falla, el paso falla
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 150
+    env:
+      AWS_REGION: us-east-1
+      MLFLOW_SERVER: vantix-mlflow
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GH_TRAIN_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Encender MLflow (si está apagado)
+        id: mlflow
+        run: |
+          status=$(aws sagemaker describe-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER" \
+            --query TrackingServerStatus --output text)
+          if [ "$status" = "Stopped" ]; then
+            aws sagemaker start-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER"
+            echo "started=true" >> "$GITHUB_OUTPUT"
+          fi
+          for _ in $(seq 1 160); do
+            status=$(aws sagemaker describe-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER" \
+              --query TrackingServerStatus --output text)
+            [ "$status" = "Started" ] && exit 0
+            sleep 15
+          done
+          echo "MLflow no arrancó (estado: $status)"; exit 1
+
+      - name: Upsert + ejecución de vantix-training
+        id: run
+        env:
+          VANTIX_BUCKET: ${{ vars.DATA_BUCKET }}
+          VANTIX_ROLE_ARN: ${{ vars.TRAINING_EXEC_ROLE_ARN }}
+          VANTIX_MLFLOW_ARN: ${{ vars.MLFLOW_TRACKING_ARN }}
+          VANTIX_REGION: us-east-1
+          SAGEMAKER_SUPPRESS_V2_WARNING: "1"
+          INGEST_DATE: ${{ inputs.ingest_date }}
+          SNAPSHOT_DATE: ${{ inputs.snapshot_date }}
+          WINDOW_DAYS: ${{ inputs.window_days }}
+          K_MIN: ${{ inputs.k_min }}
+          K_MAX: ${{ inputs.k_max }}
+        run: |
+          python -m pipelines.training.pipeline_sagemaker run --ingest-date "$INGEST_DATE" \
+            --snapshot-date "$SNAPSHOT_DATE" --window-days "$WINDOW_DAYS" --k-min "$K_MIN" --k-max "$K_MAX" \
+            | tee run.log
+          arn=$(grep -o 'arn:aws:sagemaker:[^ ]*/execution/[^ ]*' run.log)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+
+      - name: Esperar a que termine
+        env:
+          ARN: ${{ steps.run.outputs.arn }}
+        run: |
+          while true; do
+            status=$(aws sagemaker describe-pipeline-execution --pipeline-execution-arn "$ARN" \
+              --query PipelineExecutionStatus --output text)
+            case "$status" in Executing|Stopping) sleep 60 ;; *) break ;; esac
+          done
+          aws sagemaker list-pipeline-execution-steps --pipeline-execution-arn "$ARN" \
+            --query "PipelineExecutionSteps[].[StepName,StepStatus,StartTime,EndTime,FailureReason]" --output table \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Estado: $status — revisar el run en MLflow (experimento vantix-segmentation)" >> "$GITHUB_STEP_SUMMARY"
+          [ "$status" = "Succeeded" ]
+
+      - name: Apagar MLflow (si lo encendió este workflow)
+        if: always() && steps.mlflow.outputs.started == 'true' && !inputs.keep_mlflow_on
+        run: aws sagemaker stop-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER"

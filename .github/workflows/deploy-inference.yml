@@ -1,0 +1,59 @@
+# CD de la inferencia (docs/arch_mlops.md §6): actualiza el pipeline vantix-inference con el código de `ref`.
+#   - Automático: merge a main con cambios SOLO en pipelines/inference/.
+#     Cambios en pipelines/common/ o en dependencias NO se despliegan solos (training-serving skew):
+#     train.yml → evaluar → promote.yml → este workflow, a mano.
+#   - Rollback: lanzar a mano con `ref` = commit anterior (inference_git_commit de summary.json).
+# No ejecuta el pipeline: las inferencias las corre el scheduler semanal.
+name: deploy-inference
+
+on:
+  push:
+    branches: [main]
+    paths: ["pipelines/inference/**"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit, tag o rama a desplegar (rollback: el commit anterior)"
+        default: main
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-inference   # un despliegue a la vez; nunca se cancela uno a medias
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GH_DEPLOY_INFERENCE_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Upsert del pipeline vantix-inference
+        env:
+          VANTIX_BUCKET: ${{ vars.DATA_BUCKET }}
+          VANTIX_SCORES_BUCKET: ${{ vars.SCORES_BUCKET }}
+          VANTIX_ROLE_ARN: ${{ vars.INFERENCE_EXEC_ROLE_ARN }}
+          VANTIX_REGION: us-east-1
+          SAGEMAKER_SUPPRESS_V2_WARNING: "1"
+        run: |
+          python -m pipelines.inference.pipeline_sagemaker upsert
+          echo "Desplegado \`$(git rev-parse --short HEAD)\` en vantix-inference" >> "$GITHUB_STEP_SUMMARY"

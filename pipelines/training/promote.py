@@ -33,7 +33,12 @@ from mlflow.tracking import MlflowClient
 
 from pipelines.common import storage
 from pipelines.common.champion import (
-    CHAMPION_FILES, MANIFEST_FILE, MODEL_FILE, PREPROCESSOR_FILE, SEGMENT_MAP_FILE, load_champion,
+    CHAMPION_FILES,
+    MANIFEST_FILE,
+    MODEL_FILE,
+    PREPROCESSOR_FILE,
+    SEGMENT_MAP_FILE,
+    load_champion,
 )
 
 MODEL_NAME = "vantix-segmentation"
@@ -126,7 +131,8 @@ def main(argv=None) -> None:
                    help="Destino de models/champion/ (local o s3://)")
     p.add_argument("--version", help="Rollback: versión del registry a la que vuelve @champion")
     p.add_argument("--export-only", action="store_true", help="No registra: solo exporta el @champion actual")
-    p.add_argument("--reason", default="", help="Justificación de la decisión (obligatoria al promover o hacer rollback)")
+    p.add_argument("--reason", default="",
+                   help="Justificación de la decisión (obligatoria al promover o hacer rollback)")
     p.add_argument("--promoted-by", default=os.environ.get("GITHUB_ACTOR") or os.environ.get("USER", "unknown"))
     p.add_argument("--tracking-uri", default=os.environ.get("MLFLOW_TRACKING_URI"))
     a = p.parse_args(argv)

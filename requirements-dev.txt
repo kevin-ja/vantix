@@ -9,3 +9,4 @@ sagemaker-mlflow>=0.1
 sagemaker>=2.232,<3
 boto3
 pytest
+ruff==0.8.4

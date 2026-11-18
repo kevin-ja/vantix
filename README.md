@@ -27,6 +27,7 @@ tests/
 ```bash
 make venv          # Python 3.11 + scikit-learn 1.4.2 (misma versión que el contenedor de SageMaker)
 make test
+make lint          # ruff + terraform fmt (lo mismo corre en CI)
 make train-local K_MIN=2 K_MAX=10      # MLflow en .local/mlflow.db
 .venv/bin/mlflow ui --backend-store-uri sqlite:///.local/mlflow.db
 

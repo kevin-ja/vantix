@@ -4,7 +4,11 @@ from __future__ import annotations
 import pandas as pd
 
 from pipelines.common.config import (
-    CRITICAL_COLUMNS, KNOWN_BETTYPES, NUMERIC_COLUMNS, RAW_COLUMNS, VOLUME_TOLERANCE,
+    CRITICAL_COLUMNS,
+    KNOWN_BETTYPES,
+    NUMERIC_COLUMNS,
+    RAW_COLUMNS,
+    VOLUME_TOLERANCE,
 )
 
 

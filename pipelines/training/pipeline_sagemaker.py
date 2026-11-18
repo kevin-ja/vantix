@@ -24,7 +24,12 @@ from sagemaker.workflow.pipeline_context import PipelineSession
 from sagemaker.workflow.steps import ProcessingStep
 
 from pipelines.common.orchestration import (
-    PROCESSING_INSTANCE, REPO, SKLEARN_VERSION, env, git_commit, stage_source,
+    PROCESSING_INSTANCE,
+    REPO,
+    SKLEARN_VERSION,
+    env,
+    git_commit,
+    stage_source,
 )
 
 PIPELINE_NAME = "vantix-training"
@@ -102,7 +107,8 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_arn:
             ProcessingInput(source=outputs["features"].S3Output.S3Uri, destination="/opt/ml/processing/input/features"),
             ProcessingInput(source=outputs["metadata"].S3Output.S3Uri, destination="/opt/ml/processing/input/metadata"),
         ],
-        outputs=[ProcessingOutput(output_name="summary", source="/opt/ml/processing/output/model", destination=train_out)],
+        outputs=[ProcessingOutput(output_name="summary", source="/opt/ml/processing/output/model",
+                                  destination=train_out)],
         arguments=[
             "--features-dir", "/opt/ml/processing/input/features",
             "--metadata-dir", "/opt/ml/processing/input/metadata",

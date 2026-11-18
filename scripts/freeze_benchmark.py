@@ -32,15 +32,17 @@ def main(argv=None) -> None:
     run_id, k, snapshot = manifest["run_id"], manifest["k"], manifest["snapshot_date"]
 
     # Artefactos de MLflow en S3 (mlflow/<experimento>/<run>/artifacts/…) y salida del paso Train.
-    profile = [o["Key"] for page in s3.get_paginator("list_objects_v2").paginate(Bucket=a.bucket, Prefix="mlflow/")
-               for o in page.get("Contents", []) if o["Key"].endswith(f"{run_id}/artifacts/profile/cluster_profile_k{k}.csv")]
+    suffix = f"{run_id}/artifacts/profile/cluster_profile_k{k}.csv"
+    pages = s3.get_paginator("list_objects_v2").paginate(Bucket=a.bucket, Prefix="mlflow/")
+    profile = [o["Key"] for page in pages for o in page.get("Contents", []) if o["Key"].endswith(suffix)]
     if len(profile) != 1:
         raise SystemExit(f"No se encontró un único perfil de clusters del run {run_id}: {profile}")
     extras = {profile[0]: f"cluster_profile_k{k}.csv",
               f"pipelines/training-output/snapshot_date={snapshot}/k_summary.csv": "k_summary.csv"}
 
     # manifest.json al final: marca el benchmark como completo.
-    copies = {CHAMPION + f: f for f in FILES if f != "manifest.json"} | extras | {CHAMPION + "manifest.json": "manifest.json"}
+    copies = {CHAMPION + f: f for f in FILES if f != "manifest.json"} | extras
+    copies[CHAMPION + "manifest.json"] = "manifest.json"
     for src, name in copies.items():
         s3.copy_object(Bucket=a.bucket, Key=BENCHMARK + name, CopySource={"Bucket": a.bucket, "Key": src})
         print(f"s3://{a.bucket}/{src} -> {BENCHMARK}{name}")

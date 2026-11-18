@@ -25,7 +25,12 @@ from sagemaker.workflow.pipeline_context import PipelineSession
 from sagemaker.workflow.steps import ProcessingStep
 
 from pipelines.common.orchestration import (
-    PROCESSING_INSTANCE, REPO, SKLEARN_VERSION, env, git_commit, stage_source,
+    PROCESSING_INSTANCE,
+    REPO,
+    SKLEARN_VERSION,
+    env,
+    git_commit,
+    stage_source,
 )
 
 PIPELINE_NAME = "vantix-inference"  # infra/inference/ (scheduler e IAM) usa este mismo nombre

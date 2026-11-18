@@ -22,7 +22,7 @@
 #   make inference-run     ejecuta el pipeline (fechas "auto" o SCORING_DATE, INF_SNAPSHOT, INF_INGEST)
 #   make schedule-on | schedule-off   activa/apaga la corrida semanal (up-inference la deja apagada)
 # Local
-#   make venv | test | train-local
+#   make venv | test | lint | train-local
 #   make promote-local RUN_ID=… SEGMENT_MAP=… REASON="…"   | inference-local
 # Docs
 #   make docs-env | diagrams    venv + Graphviz locales en docs/ -> docs/img/*.png
@@ -58,7 +58,7 @@ export TF_VAR_state_bucket = $(STATE_BUCKET)
 .PHONY: help login bootstrap up-shared up-training up-inference down-training down-inference \
         down-shared down-all mlflow-stop mlflow-start mlflow-status upload-raw pipeline-upsert \
         pipeline-run check-clean promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
-        venv test train-local promote-local inference-local docs-env diagrams
+        venv test lint train-local promote-local inference-local docs-env diagrams
 
 help:
 	@sed -n '3,31p' Makefile | sed 's/^# \{0,1\}//'
@@ -215,6 +215,10 @@ venv:
 
 test:
 	$(PY) -m pytest -q tests
+
+lint:
+	.venv/bin/ruff check .
+	$(TF) fmt -check -recursive $(INFRA)
 
 # Corrida completa en local (sin AWS): MLflow en .local/mlflow.db (mlflow ui --backend-store-uri sqlite:///.local/mlflow.db)
 train-local:

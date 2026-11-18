@@ -5,7 +5,11 @@ import numpy as np
 import pandas as pd
 
 from pipelines.common.config import (
-    ASIAN_BETTYPES, COLUMNS_TO_DROP, DECIMAL_BETTYPES, FEATURE_COLS, USER_COL,
+    ASIAN_BETTYPES,
+    COLUMNS_TO_DROP,
+    DECIMAL_BETTYPES,
+    FEATURE_COLS,
+    USER_COL,
 )
 
 

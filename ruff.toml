@@ -1,0 +1,7 @@
+# Lint del CI (make lint). Reglas base de ruff + imports ordenados; línea larga acorde al código actual.
+target-version = "py310"  # Python del contenedor sklearn 1.4-2 de SageMaker (no el 3.11 local)
+line-length = 120
+extend-exclude = ["docs", ".local", "data"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]

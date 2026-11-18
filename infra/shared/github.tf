@@ -80,7 +80,11 @@ locals {
     train = {
       pipeline  = "${var.project}-training"
       exec_role = "${var.project}-training-exec"
-      actions   = ["sagemaker:StartPipelineExecution", "sagemaker:DescribePipelineExecution"]
+      actions = [
+        "sagemaker:StartPipelineExecution",
+        "sagemaker:DescribePipelineExecution",
+        "sagemaker:ListPipelineExecutionSteps",
+      ]
     }
     deploy-inference = {
       pipeline  = "${var.project}-inference"
@@ -141,4 +145,23 @@ resource "aws_iam_role_policy" "github_pipeline" {
   name     = each.key
   role     = aws_iam_role.github_pipeline[each.key].id
   policy   = data.aws_iam_policy_document.github_pipeline[each.key].json
+}
+
+# train.yml enciende MLflow si está apagado (el paso Train registra en él) y lo apaga al terminar.
+data "aws_iam_policy_document" "github_train_mlflow" {
+  statement {
+    sid = "MLflowPower"
+    actions = [
+      "sagemaker:DescribeMlflowTrackingServer",
+      "sagemaker:StartMlflowTrackingServer",
+      "sagemaker:StopMlflowTrackingServer",
+    ]
+    resources = [aws_sagemaker_mlflow_tracking_server.this.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "github_train_mlflow" {
+  name   = "mlflow-power"
+  role   = aws_iam_role.github_pipeline["train"].id
+  policy = data.aws_iam_policy_document.github_train_mlflow.json
 }
