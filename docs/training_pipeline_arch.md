@@ -14,6 +14,10 @@ Segmentación de clientes con KMeans sobre 5 features por usuario: Recency, Freq
 
 ## 2. Diagrama general
 
+![Arquitectura](img/training_pipeline.png)
+
+> Generado con `make diagrams` desde `docs/training_pipeline_diagram.py`.
+
 ```
  S3                       SageMaker Pipelines                                MLflow (SageMaker)
  ──                       ───────────────────                                ──────────────────

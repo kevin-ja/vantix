@@ -15,6 +15,10 @@ Cada semana, el pipeline asigna a cada cliente el segmento del modelo `@champion
 
 ## 2. Diagrama general
 
+![Arquitectura](img/inference_pipeline.png)
+
+> Generado con `make diagrams` desde `docs/inference_pipeline_diagram.py`.
+
 ```
                          ┌──────────────────────────┐
                          │ EventBridge Scheduler    │  cron semanal

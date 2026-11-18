@@ -22,6 +22,8 @@
 # Local
 #   make venv | test | train-local
 #   make promote-local RUN_ID=… SEGMENT_MAP=…   | inference-local
+# Docs
+#   make docs-env | diagrams    venv + Graphviz locales en docs/ -> docs/img/*.png
 #
 # "up" es idempotente: desde cero crea todo; con infra ya levantada solo aplica cambios.
 # Sin confirmación interactiva: make up-training TF_ARGS=-auto-approve
@@ -54,10 +56,10 @@ export TF_VAR_state_bucket = $(STATE_BUCKET)
 .PHONY: help login bootstrap up-shared up-training up-inference down-training down-inference \
         down-shared down-all mlflow-stop mlflow-start mlflow-status upload-raw pipeline-upsert \
         pipeline-run promote promote-export inference-upsert inference-run schedule-on schedule-off \
-        venv test train-local promote-local inference-local
+        venv test train-local promote-local inference-local docs-env diagrams
 
 help:
-	@sed -n '3,27p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,29p' Makefile | sed 's/^# \{0,1\}//'
 
 login:
 	aws sso login --profile $(AWS_PROFILE)
@@ -217,3 +219,19 @@ inference-local:
 		--snapshot-date $(if $(filter auto,$(INF_SNAPSHOT)),$(SNAPSHOT_DATE),$(INF_SNAPSHOT)) \
 		--scoring-date $(if $(filter auto,$(SCORING_DATE)),2025-05-01,$(SCORING_DATE)) \
 		--window-days $(WINDOW_DAYS)
+
+# --- docs: diagramas (todo local al repo: docs/.venv + Graphviz en docs/.tools) ----
+DOCS_PY  := docs/.venv/bin/python
+GRAPHVIZ := docs/.tools/graphviz/bin
+
+docs-env:
+	uv venv --python 3.11 docs/.venv
+	uv pip install --python $(DOCS_PY) -r docs/requirements.txt
+	@test -x docs/.tools/bin/micromamba || { mkdir -p docs/.tools && \
+		curl -fsSL https://micro.mamba.pm/api/micromamba/osx-arm64/latest | tar -xj -C docs/.tools bin/micromamba; }
+	MAMBA_ROOT_PREFIX=$(CURDIR)/docs/.tools/mamba docs/.tools/bin/micromamba create -y -q \
+		-p $(CURDIR)/docs/.tools/graphviz -c conda-forge graphviz
+
+diagrams:
+	PATH="$(CURDIR)/$(GRAPHVIZ):$$PATH" $(DOCS_PY) docs/training_pipeline_diagram.py
+	PATH="$(CURDIR)/$(GRAPHVIZ):$$PATH" $(DOCS_PY) docs/inference_pipeline_diagram.py

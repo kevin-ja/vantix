@@ -3,7 +3,7 @@
     source docs/.venv/bin/activate
     python docs/inference_pipeline_diagram.py     # -> docs/img/inference_pipeline.png
 
-Requiere Graphviz (`dot`) en el PATH.
+Requiere Graphviz (`dot`) en el PATH: `make diagrams` usa el de docs/.tools/ (micromamba, local al repo).
 """
 from pathlib import Path
 
@@ -20,7 +20,7 @@ from diagrams.onprem.iac import Terraform
 OUT = Path(__file__).resolve().parent / "img" / "inference_pipeline"
 OUT.parent.mkdir(exist_ok=True)
 
-GRAPH = {"pad": "0.4", "nodesep": "0.7", "ranksep": "1.0", "fontsize": "22"}
+GRAPH = {"pad": "1.0", "nodesep": "0.9", "ranksep": "1.4", "fontsize": "22", "splines": "spline"}
 
 with Diagram("VANTIX · Pipeline de inferencia (batch semanal)", filename=str(OUT), outformat="png",
              show=False, direction="LR", graph_attr=GRAPH):
@@ -56,5 +56,4 @@ with Diagram("VANTIX · Pipeline de inferencia (batch semanal)", filename=str(OU
     scores >> Edge(label="lee") >> api
 
     registry >> Edge(style="dashed", label="make promote\n(exporta; MLflow puede estar apagado)") >> champion
-    role - Edge(style="dotted", label="asume") - score
     tf >> Edge(style="dotted", label="crea") >> [role, scheduler]
