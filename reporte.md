@@ -37,6 +37,17 @@ Los dos sistemas, entrenamiento e inferencia, **funcionan en producción en Sage
 | Redes (VPC, NAT) y ECR | No aplica: no se usan |
 | **Total** | `up-training` 21 min 16 s · `up-inference` 29 s |
 
+**Sin MLflow, todo queda listo en ~1,5 min**:
+
+| Qué | Tiempo |
+|---|---|
+| Infra de training sin MLflow (S3 + IAM) | ~30 s |
+| Infra de inferencia (S3 + IAM + scheduler) | 29 s |
+| Crear o actualizar el pipeline de training en SageMaker (SDK) | 14 s |
+| Crear o actualizar el pipeline de inferencia en SageMaker (SDK) | 13 s |
+
+Terraform no crea recursos de SageMaker salvo MLflow: los pipelines los crea el SDK, y las máquinas se encienden en cada job (ver la tabla siguiente).
+
 **Pipelines (SageMaker)**:
 
 | Paso | Total | Arrancar la máquina | Descargar la imagen | Instalar librerías | **Cómputo real** | Cierre y subida a S3 |
