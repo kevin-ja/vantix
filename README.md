@@ -37,6 +37,8 @@ make inference-local                                                 # -> .local
 
 ## AWS: primera corrida (manual)
 
+> `pipeline-*` e `inference-*` solo corren con el código commiteado y pusheado (`make check-clean`): así el `git_commit` registrado existe en GitHub.
+
 Requisitos: perfil `vantix` (`make login`) y cuota de `ml.m5.xlarge` para training jobs aprobada.
 
 ```bash

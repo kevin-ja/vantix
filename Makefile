@@ -57,7 +57,7 @@ export TF_VAR_state_bucket = $(STATE_BUCKET)
 
 .PHONY: help login bootstrap up-shared up-training up-inference down-training down-inference \
         down-shared down-all mlflow-stop mlflow-start mlflow-status upload-raw pipeline-upsert \
-        pipeline-run promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
+        pipeline-run check-clean promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
         venv test train-local promote-local inference-local docs-env diagrams
 
 help:
@@ -140,6 +140,15 @@ mlflow-status:
 	@aws sagemaker describe-mlflow-tracking-server --tracking-server-name $(MLFLOW_SERVER) --region $(REGION) \
 		--query '{status:TrackingServerStatus,url:TrackingServerUrl}' --output table
 
+# --- trazabilidad: solo se sube a SageMaker código commiteado y pusheado ----------------
+# El git_commit que registran MLflow y summary.json debe existir en GitHub (docs/arch_mlops.md).
+check-clean:
+	@test -z "$$(git status --porcelain -- pipelines)" || { \
+		echo "Hay cambios sin commitear en pipelines/: haz commit y push antes de correr en AWS"; \
+		git status --short -- pipelines; exit 1; }
+	@git fetch -q origin && git branch -r --contains HEAD | grep -q . || { \
+		echo "El commit $$(git rev-parse --short HEAD) no está en GitHub: haz git push antes de correr en AWS"; exit 1; }
+
 # --- datos y pipeline ----------------------------------------------------------
 TRAINING_ENV = VANTIX_BUCKET=$(call tf_output,training,data_bucket) \
                VANTIX_ROLE_ARN=$(call tf_output,training,training_role_arn) \
@@ -150,10 +159,10 @@ upload-raw:
 	$(PY) scripts/upload_raw.py --csv data/data.csv --bucket $(call tf_output,shared,data_bucket) \
 		--ingest-date $(INGEST_DATE)
 
-pipeline-upsert:
+pipeline-upsert: check-clean
 	$(TRAINING_ENV) $(PY) -m pipelines.training.pipeline_sagemaker upsert
 
-pipeline-run:
+pipeline-run: check-clean
 	$(TRAINING_ENV) $(PY) -m pipelines.training.pipeline_sagemaker run \
 		--ingest-date $(INGEST_DATE) --snapshot-date $(SNAPSHOT_DATE) \
 		--window-days $(WINDOW_DAYS) --k-min $(K_MIN) --k-max $(K_MAX)
@@ -184,11 +193,11 @@ INFERENCE_ENV = VANTIX_BUCKET=$(call tf_output,inference,data_bucket) \
                 VANTIX_ROLE_ARN=$(call tf_output,inference,inference_role_arn) \
                 VANTIX_REGION=$(REGION)
 
-inference-upsert:
+inference-upsert: check-clean
 	$(INFERENCE_ENV) $(PY) -m pipelines.inference.pipeline_sagemaker upsert
 
 # Con datos históricos: make inference-run INF_SNAPSHOT=2025-04-30 SCORING_DATE=2025-05-01
-inference-run:
+inference-run: check-clean
 	$(INFERENCE_ENV) $(PY) -m pipelines.inference.pipeline_sagemaker run \
 		--ingest-date $(INF_INGEST) --snapshot-date $(INF_SNAPSHOT) --scoring-date $(SCORING_DATE) \
 		--window-days $(WINDOW_DAYS)
