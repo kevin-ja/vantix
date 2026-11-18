@@ -88,7 +88,7 @@ Cada semana, el pipeline asigna a cada cliente el segmento del modelo `@champion
  "model_version": "3", "rows": 108008}
 ```
 
-`summary.json`: número de usuarios por segmento, `snapshot_date`, `raw_sha256`, `model_version` y duración. Sirve para revisar de un vistazo si la distribución cambió.
+`summary.json`: número de usuarios por segmento, `snapshot_date`, `raw_sha256`, `model_version`, `training_git_commit` (del manifest), `inference_git_commit` (del pipeline) y duración. Sirve para revisar de un vistazo si la distribución cambió.
 
 ## 5. Artefactos: de MLflow a S3
 

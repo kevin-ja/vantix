@@ -27,7 +27,8 @@ def write_champion(d, pre, model, k=K, seg_map=None):
     joblib.dump(pre, d / "preprocessor.pkl")
     joblib.dump(model, d / "model.pkl")
     (d / "segment_map.json").write_text(json.dumps(seg_map or {str(i): f"seg{i}" for i in range(k)}))
-    (d / "manifest.json").write_text(json.dumps({"model_version": "7", "run_id": "abc", "k": k}))
+    (d / "manifest.json").write_text(json.dumps({"model_version": "7", "run_id": "abc", "k": k,
+                                                       "git_commit": "train123"}))
     return d
 
 
@@ -45,7 +46,8 @@ def raw_uri(tmp_path, raw_df):
     return str(tmp_path / "raw")
 
 
-def test_score_end_to_end(tmp_path, raw_uri, champion_dir):
+def test_score_end_to_end(tmp_path, raw_uri, champion_dir, monkeypatch):
+    monkeypatch.setenv("GIT_COMMIT", "infer456")
     out = tmp_path / "scores"
     score.main(["--raw-uri", raw_uri, "--champion-uri", str(champion_dir), "--output-uri", str(out),
                 "--snapshot-date", "2025-04-30", "--scoring-date", "2025-05-01"])
@@ -64,6 +66,8 @@ def test_score_end_to_end(tmp_path, raw_uri, champion_dir):
     summary = json.loads((part / "summary.json").read_text())
     assert summary["ingest_date"] == "2025-04-30"  # "auto" -> última partición
     assert sum(s["n"] for s in summary["segments"].values()) == 3
+    assert summary["training_git_commit"] == "train123"  # del manifest del champion
+    assert summary["inference_git_commit"] == "infer456"  # de GIT_COMMIT (lo pone el pipeline)
 
 
 def test_score_is_deterministic(tmp_path, raw_uri, champion_dir):

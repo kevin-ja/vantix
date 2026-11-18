@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 import argparse  # noqa: E402
 import json  # noqa: E402
 import logging  # noqa: E402
+import os  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
 from datetime import datetime, timedelta, timezone  # noqa: E402
@@ -49,6 +50,8 @@ def parse_args(argv=None):
     p.add_argument("--scoring-date", default=AUTO)
     p.add_argument("--window-days", type=int, default=30)
     p.add_argument("--reference-rows", type=int, default=0, help="Filas de referencia (0 = no validar volumen)")
+    p.add_argument("--git-commit", default=os.environ.get("GIT_COMMIT", "unknown"),
+                   help="Commit del código de inferencia (en SageMaker lo pasa el pipeline como GIT_COMMIT)")
     return p.parse_args(argv)
 
 
@@ -129,6 +132,7 @@ def main(argv=None) -> None:
         champ = load_champion(storage.download_dir(a.champion_uri, tmp / "champion"))
         k = int(champ.manifest["k"])
         log.info("champion: v%s (run %s, k=%d)", champ.manifest["model_version"], champ.manifest["run_id"], k)
+        log.info("código: inferencia %s · entrenamiento %s", a.git_commit, champ.manifest.get("git_commit", "unknown"))
 
         # 6-7. transform -> predict -> segmento
         scores = score(feats, champ, scoring_date)
@@ -151,6 +155,8 @@ def main(argv=None) -> None:
             "model_version": str(champ.manifest["model_version"]),
             "run_id": champ.manifest["run_id"],
             "k": k,
+            "training_git_commit": champ.manifest.get("git_commit", "unknown"),
+            "inference_git_commit": a.git_commit,
             "rows": int(len(scores)),
             "segments": {s: {"n": int(n), "pct": round(float(n) / len(scores) * 100, 2)} for s, n in counts.items()},
             "seconds": round(time.time() - t0, 1),
