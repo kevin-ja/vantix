@@ -15,21 +15,20 @@ import argparse
 import os
 
 import boto3
-from sagemaker.inputs import TrainingInput
 from sagemaker.processing import FrameworkProcessor, ProcessingInput, ProcessingOutput
 from sagemaker.sklearn.estimator import SKLearn
 from sagemaker.workflow.functions import Join
 from sagemaker.workflow.parameters import ParameterInteger, ParameterString
 from sagemaker.workflow.pipeline import Pipeline
 from sagemaker.workflow.pipeline_context import PipelineSession
-from sagemaker.workflow.steps import ProcessingStep, TrainingStep
+from sagemaker.workflow.steps import ProcessingStep
 
 from pipelines.common.orchestration import (
     PROCESSING_INSTANCE, REPO, SKLEARN_VERSION, env, git_commit, stage_source,
 )
 
 PIPELINE_NAME = "vantix-training"
-TRAINING_INSTANCE = "ml.m5.xlarge"     # cuota solicitada: 1
+TRAINING_INSTANCE = "ml.m5.xlarge"     # cuota solicitada: 1 (en revisión; hoy Train usa PROCESSING_INSTANCE)
 
 
 def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_arn: str) -> Pipeline:
@@ -80,28 +79,40 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_arn:
     )
     step_prepare = ProcessingStep(name="Prepare", step_args=prepare_args)
 
-    # 5-7. Training job: preprocesamiento (fit) -> KMeans por k -> evaluación -> MLflow
-    estimator = SKLearn(
-        entry_point="train_entry.py",
-        source_dir=source_dir,
+    # 5-7. Preprocesamiento (fit) -> KMeans por k -> evaluación -> MLflow.
+    # Corre como Processing job (ml.t3.xlarge) mientras la cuota de training jobs sea 0; mismo train.py.
+    # Para volver a Training job: SKLearn estimator + TrainingStep con TRAINING_INSTANCE (ver historial de git).
+    trainer = FrameworkProcessor(
+        estimator_cls=SKLearn,
         framework_version=SKLEARN_VERSION,
-        py_version="py3",
         role=role,
-        instance_type=TRAINING_INSTANCE,
+        instance_type=PROCESSING_INSTANCE,
         instance_count=1,
         base_job_name="vantix-train",
         sagemaker_session=session,
-        output_path=f"s3://{bucket}/pipelines/training-output",
         code_location=f"s3://{bucket}/pipelines/code",
-        hyperparameters={"k-min": k_min, "k-max": k_max, "git-commit": commit},
-        environment={"MLFLOW_TRACKING_URI": mlflow_arn},
+        env={"MLFLOW_TRACKING_URI": mlflow_arn},
     )
     outputs = step_prepare.properties.ProcessingOutputConfig.Outputs
-    train_args = estimator.fit(inputs={
-        "features": TrainingInput(s3_data=outputs["features"].S3Output.S3Uri),
-        "metadata": TrainingInput(s3_data=outputs["metadata"].S3Output.S3Uri),
-    })
-    step_train = TrainingStep(name="Train", step_args=train_args)
+    train_out = Join(on="", values=[f"s3://{bucket}/pipelines/training-output/snapshot_date=", snapshot_date])
+    train_args = trainer.run(
+        code="train_entry.py",
+        source_dir=source_dir,
+        inputs=[
+            ProcessingInput(source=outputs["features"].S3Output.S3Uri, destination="/opt/ml/processing/input/features"),
+            ProcessingInput(source=outputs["metadata"].S3Output.S3Uri, destination="/opt/ml/processing/input/metadata"),
+        ],
+        outputs=[ProcessingOutput(output_name="summary", source="/opt/ml/processing/output/model", destination=train_out)],
+        arguments=[
+            "--features-dir", "/opt/ml/processing/input/features",
+            "--metadata-dir", "/opt/ml/processing/input/metadata",
+            "--model-dir", "/opt/ml/processing/output/model",
+            "--k-min", k_min.to_string(),
+            "--k-max", k_max.to_string(),
+            "--git-commit", commit,
+        ],
+    )
+    step_train = ProcessingStep(name="Train", step_args=train_args)
 
     return Pipeline(
         name=PIPELINE_NAME,

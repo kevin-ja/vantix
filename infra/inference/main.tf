@@ -244,10 +244,25 @@ resource "aws_scheduler_schedule" "weekly" {
     mode = "OFF"
   }
 
-  # Sin parámetros: el pipeline usa sus defaults ("auto").
+  # Fechas "auto" (= defaults del pipeline). AWS exige al menos un parámetro en el target.
   target {
     arn      = local.pipeline_arn
     role_arn = aws_iam_role.scheduler.arn
+
+    sagemaker_pipeline_parameters {
+      pipeline_parameter {
+        name  = "IngestDate"
+        value = "auto"
+      }
+      pipeline_parameter {
+        name  = "SnapshotDate"
+        value = "auto"
+      }
+      pipeline_parameter {
+        name  = "ScoringDate"
+        value = "auto"
+      }
+    }
 
     retry_policy {
       maximum_retry_attempts = 0
