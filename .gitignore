@@ -43,3 +43,10 @@ HANDOFF.md
 .idea/
 .vscode/
 .claude/
+
+# Fuera del versionado
+reporte.md
+train_raw_pipeline.py
+docs/
+.DS_Store
+.ipynb_checkpoints/
