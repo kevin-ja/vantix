@@ -1,0 +1,149 @@
+"""Orquestación del pipeline de entrenamiento en SageMaker (capa delgada).
+
+Solo conecta los scripts de pipelines/training/steps/ con jobs de SageMaker. La lógica de ML no vive aquí:
+para cambiar de orquestador basta con reescribir este archivo.
+
+    python -m pipelines.training.pipeline_sagemaker upsert
+    python -m pipelines.training.pipeline_sagemaker run --ingest-date 2025-04-30 --snapshot-date 2025-04-30
+
+Config por variables de entorno (las pone el Makefile desde los outputs de Terraform):
+    VANTIX_BUCKET, VANTIX_ROLE_ARN, VANTIX_MLFLOW_ARN, VANTIX_REGION, AWS_PROFILE
+"""
+from __future__ import annotations
+
+import argparse
+import os
+
+import boto3
+from sagemaker.inputs import TrainingInput
+from sagemaker.processing import FrameworkProcessor, ProcessingInput, ProcessingOutput
+from sagemaker.sklearn.estimator import SKLearn
+from sagemaker.workflow.functions import Join
+from sagemaker.workflow.parameters import ParameterInteger, ParameterString
+from sagemaker.workflow.pipeline import Pipeline
+from sagemaker.workflow.pipeline_context import PipelineSession
+from sagemaker.workflow.steps import ProcessingStep, TrainingStep
+
+from pipelines.common.orchestration import (
+    PROCESSING_INSTANCE, REPO, SKLEARN_VERSION, env, git_commit, stage_source,
+)
+
+PIPELINE_NAME = "vantix-training"
+TRAINING_INSTANCE = "ml.m5.xlarge"     # cuota solicitada: 1
+
+
+def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_arn: str) -> Pipeline:
+    ingest_date = ParameterString("IngestDate", default_value="2025-04-30")
+    snapshot_date = ParameterString("SnapshotDate", default_value="2025-04-30")
+    window_days = ParameterInteger("WindowDays", default_value=30)
+    reference_rows = ParameterInteger("ReferenceRows", default_value=0)
+    k_min = ParameterInteger("KMin", default_value=2)
+    k_max = ParameterInteger("KMax", default_value=10)
+    # El código se sube en el upsert: el commit se fija ahí.
+    commit = ParameterString("GitCommit", default_value=git_commit())
+
+    source_dir = stage_source(
+        REPO / "pipelines" / "training" / "requirements.txt",
+        {"prepare_entry.py": "pipelines.training.steps.prepare", "train_entry.py": "pipelines.training.steps.train"},
+    )
+    raw_uri = Join(on="", values=[f"s3://{bucket}/raw/ingest_date=", ingest_date, "/"])
+    silver = Join(on="", values=[f"s3://{bucket}/silver/user_features/snapshot_date=", snapshot_date])
+    meta = Join(on="", values=[f"s3://{bucket}/silver/metadata/snapshot_date=", snapshot_date])
+
+    # 1-4. Processing job: ingesta -> validación -> limpieza -> features
+    processor = FrameworkProcessor(
+        estimator_cls=SKLearn,
+        framework_version=SKLEARN_VERSION,
+        role=role,
+        instance_type=PROCESSING_INSTANCE,
+        instance_count=1,
+        base_job_name="vantix-prepare",
+        sagemaker_session=session,
+        code_location=f"s3://{bucket}/pipelines/code",
+    )
+    prepare_args = processor.run(
+        code="prepare_entry.py",
+        source_dir=source_dir,
+        inputs=[ProcessingInput(source=raw_uri, destination="/opt/ml/processing/input/raw")],
+        outputs=[
+            ProcessingOutput(output_name="features", source="/opt/ml/processing/output/features", destination=silver),
+            ProcessingOutput(output_name="metadata", source="/opt/ml/processing/output/metadata", destination=meta),
+        ],
+        arguments=[
+            "--input", "/opt/ml/processing/input/raw",
+            "--output-dir", "/opt/ml/processing/output",
+            "--snapshot-date", snapshot_date,
+            "--window-days", window_days.to_string(),
+            "--reference-rows", reference_rows.to_string(),
+            "--raw-uri", raw_uri,
+        ],
+    )
+    step_prepare = ProcessingStep(name="Prepare", step_args=prepare_args)
+
+    # 5-7. Training job: preprocesamiento (fit) -> KMeans por k -> evaluación -> MLflow
+    estimator = SKLearn(
+        entry_point="train_entry.py",
+        source_dir=source_dir,
+        framework_version=SKLEARN_VERSION,
+        py_version="py3",
+        role=role,
+        instance_type=TRAINING_INSTANCE,
+        instance_count=1,
+        base_job_name="vantix-train",
+        sagemaker_session=session,
+        output_path=f"s3://{bucket}/pipelines/training-output",
+        code_location=f"s3://{bucket}/pipelines/code",
+        hyperparameters={"k-min": k_min, "k-max": k_max, "git-commit": commit},
+        environment={"MLFLOW_TRACKING_URI": mlflow_arn},
+    )
+    outputs = step_prepare.properties.ProcessingOutputConfig.Outputs
+    train_args = estimator.fit(inputs={
+        "features": TrainingInput(s3_data=outputs["features"].S3Output.S3Uri),
+        "metadata": TrainingInput(s3_data=outputs["metadata"].S3Output.S3Uri),
+    })
+    step_train = TrainingStep(name="Train", step_args=train_args)
+
+    return Pipeline(
+        name=PIPELINE_NAME,
+        parameters=[ingest_date, snapshot_date, window_days, reference_rows, k_min, k_max, commit],
+        steps=[step_prepare, step_train],
+        sagemaker_session=session,
+    )
+
+
+def main(argv=None) -> None:
+    p = argparse.ArgumentParser()
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("upsert", help="Crea o actualiza el pipeline (sube el código actual)")
+    run = sub.add_parser("run", help="Upsert + ejecución")
+    run.add_argument("--ingest-date", required=True)
+    run.add_argument("--snapshot-date", required=True)
+    run.add_argument("--window-days", type=int, default=30)
+    run.add_argument("--reference-rows", type=int, default=0)
+    run.add_argument("--k-min", type=int, default=2)
+    run.add_argument("--k-max", type=int, default=10)
+    a = p.parse_args(argv)
+
+    bucket, role, mlflow_arn = env("VANTIX_BUCKET"), env("VANTIX_ROLE_ARN"), env("VANTIX_MLFLOW_ARN")
+    boto_session = boto3.Session(profile_name=os.environ.get("AWS_PROFILE"),
+                                 region_name=os.environ.get("VANTIX_REGION", "us-east-1"))
+    session = PipelineSession(boto_session=boto_session, default_bucket=bucket, default_bucket_prefix="pipelines")
+
+    pipeline = build_pipeline(session, bucket, role, mlflow_arn)
+    pipeline.upsert(role_arn=role)
+    print(f"Pipeline {PIPELINE_NAME} actualizado")
+
+    if a.cmd == "run":
+        execution = pipeline.start(parameters={
+            "IngestDate": a.ingest_date,
+            "SnapshotDate": a.snapshot_date,
+            "WindowDays": a.window_days,
+            "ReferenceRows": a.reference_rows,
+            "KMin": a.k_min,
+            "KMax": a.k_max,
+        })
+        print(f"Ejecución iniciada: {execution.arn}")
+
+
+if __name__ == "__main__":
+    main()

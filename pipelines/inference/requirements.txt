@@ -1,0 +1,4 @@
+# Se instala sobre el contenedor oficial de SageMaker scikit-learn 1.4-2.
+# scikit-learn fijado: los .pkl del champion dependen de la versión. Sin MLflow: los artefactos vienen de S3.
+scikit-learn==1.4.2
+pyarrow>=14,<20

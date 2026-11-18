@@ -1,0 +1,6 @@
+# Se instala sobre el contenedor oficial de SageMaker scikit-learn 1.4-2.
+# scikit-learn fijado para que pip no lo actualice: los .pkl dependen de la versión.
+scikit-learn==1.4.2
+pyarrow>=14,<20
+mlflow>=2.16,<4
+sagemaker-mlflow>=0.1

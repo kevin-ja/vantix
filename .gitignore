@@ -1,0 +1,44 @@
+# Python
+.venv/
+docs/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local runs
+.local/
+mlruns/
+mlartifacts/
+
+# Data (vive en S3)
+data/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+crash.log
+
+# Secretos y credenciales
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*
+.aws/
+secrets*
+
+# Notas de sesión y notebooks (no se versionan)
+HANDOFF.md
+*.ipynb
+.ipynb_checkpoints/
+
+# SO / editores
+.DS_Store
+.idea/
+.vscode/
+.claude/

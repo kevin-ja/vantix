@@ -1,0 +1,21 @@
+| Variable | Type | Definition |
+|---|---|---|
+| Transaction Id | INT | The identification number of each transaction (bet). |
+| TransDate | datetime[μs] | The time when the player placed bet. |
+| UserName | STR | The player's username. |
+| CurrencyStr | STR | Local currency of the transaction. |
+| Actual_Stake | FLOAT | Player's valid stake. |
+| Odds | FLOAT | Betting Odds. |
+| Bettype | INT | What was the type of bet placed, in conjunction with Betteam. |
+| Betteam | STR | What was the bet option placed, in conjunction with Bettype. |
+| Status | STR | Status of the player's bet. |
+| Winlost | FLOAT | The amount that the player won or lost (including stake). |
+| ActualRate | FLOAT | Exchange rate of each local currency to SGD. |
+| Winlostdate | DATETIME | Event Date. |
+| LiveIndicator | BOOLEAN | Whether the bet placed was before the match kicked off (Non-Live) or during the match (Live). |
+| BetGameTime | STR | At what time during the match the bet was placed. |
+| MatchId | INT | Game ID (indicates a specific match). |
+| SportId | INT | Sport ID (indicates the sport). |
+| LeagueId | INT | League ID (indicates a specific League). |
+| WebId | STR | Each WebId represents a Website (brand). |
+| MaxBet | FLOAT | Maximum amount of stake that a player can place per bet. |
