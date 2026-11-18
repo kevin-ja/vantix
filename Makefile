@@ -13,15 +13,17 @@
 #   make upload-raw        data/data.csv -> Parquet -> s3://.../raw/ingest_date=$(INGEST_DATE)/
 #   make pipeline-upsert   crea/actualiza el pipeline en SageMaker
 #   make pipeline-run      ejecuta el pipeline (SNAPSHOT_DATE, WINDOW_DAYS, K_MIN, K_MAX)
-#   make promote RUN_ID=… SEGMENT_MAP=…   registra el run hijo como @champion y lo exporta a models/champion/
-#   make promote-export    re-exporta el @champion actual (tras reasignar el alias)
+#   make promote RUN_ID=… SEGMENT_MAP=segment_maps/… REASON="…"   registra el run hijo como @champion y exporta
+#   make rollback VERSION=… REASON="…"   @champion vuelve a una versión anterior y se re-exporta
+#   make promote-export    re-exporta el @champion actual
+#   make benchmark-freeze  copia (una sola vez) el champion v1 a models/benchmark/ (benchmark fijo)
 # Pipeline de inferencia
 #   make inference-upsert  crea/actualiza el pipeline en SageMaker
 #   make inference-run     ejecuta el pipeline (fechas "auto" o SCORING_DATE, INF_SNAPSHOT, INF_INGEST)
 #   make schedule-on | schedule-off   activa/apaga la corrida semanal (up-inference la deja apagada)
 # Local
 #   make venv | test | train-local
-#   make promote-local RUN_ID=… SEGMENT_MAP=…   | inference-local
+#   make promote-local RUN_ID=… SEGMENT_MAP=… REASON="…"   | inference-local
 # Docs
 #   make docs-env | diagrams    venv + Graphviz locales en docs/ -> docs/img/*.png
 #
@@ -55,11 +57,11 @@ export TF_VAR_state_bucket = $(STATE_BUCKET)
 
 .PHONY: help login bootstrap up-shared up-training up-inference down-training down-inference \
         down-shared down-all mlflow-stop mlflow-start mlflow-status upload-raw pipeline-upsert \
-        pipeline-run promote promote-export inference-upsert inference-run schedule-on schedule-off \
+        pipeline-run promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
         venv test train-local promote-local inference-local docs-env diagrams
 
 help:
-	@sed -n '3,29p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,31p' Makefile | sed 's/^# \{0,1\}//'
 
 login:
 	aws sso login --profile $(AWS_PROFILE)
@@ -157,10 +159,19 @@ pipeline-run:
 		--window-days $(WINDOW_DAYS) --k-min $(K_MIN) --k-max $(K_MAX)
 
 promote:
-	@test -n "$(RUN_ID)" -a -n "$(SEGMENT_MAP)" || { echo "Uso: make promote RUN_ID=<run hijo> SEGMENT_MAP=<json>"; exit 1; }
+	@test -n "$(RUN_ID)" -a -n "$(SEGMENT_MAP)" -a -n "$(REASON)" || { echo 'Uso: make promote RUN_ID=<run hijo> SEGMENT_MAP=segment_maps/<snapshot>_k<k>.json REASON="…"'; exit 1; }
 	MLFLOW_TRACKING_URI=$(call tf_output,training,mlflow_tracking_arn) \
-		$(PY) -m pipelines.training.promote --run-id $(RUN_ID) --segment-map $(SEGMENT_MAP) \
+		$(PY) -m pipelines.training.promote --run-id $(RUN_ID) --segment-map $(SEGMENT_MAP) --reason "$(REASON)" \
 		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
+
+rollback:
+	@test -n "$(VERSION)" -a -n "$(REASON)" || { echo 'Uso: make rollback VERSION=<versión del registry> REASON="…"'; exit 1; }
+	MLFLOW_TRACKING_URI=$(call tf_output,training,mlflow_tracking_arn) \
+		$(PY) -m pipelines.training.promote --version $(VERSION) --reason "$(REASON)" \
+		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
+
+benchmark-freeze:
+	$(PY) scripts/freeze_benchmark.py --bucket $(call tf_output,shared,data_bucket)
 
 promote-export:
 	MLFLOW_TRACKING_URI=$(call tf_output,training,mlflow_tracking_arn) \
@@ -206,9 +217,9 @@ train-local:
 
 # Promoción local: registra en .local/mlflow.db y exporta a .local/models/champion
 promote-local:
-	@test -n "$(RUN_ID)" -a -n "$(SEGMENT_MAP)" || { echo "Uso: make promote-local RUN_ID=<run hijo> SEGMENT_MAP=<json>"; exit 1; }
+	@test -n "$(RUN_ID)" -a -n "$(SEGMENT_MAP)" -a -n "$(REASON)" || { echo 'Uso: make promote-local RUN_ID=<run hijo> SEGMENT_MAP=<json> REASON="…"'; exit 1; }
 	$(PY) -m pipelines.training.promote --tracking-uri sqlite:///.local/mlflow.db \
-		--run-id $(RUN_ID) --segment-map $(SEGMENT_MAP) --export-uri .local/models/champion
+		--run-id $(RUN_ID) --segment-map $(SEGMENT_MAP) --reason "$(REASON)" --export-uri .local/models/champion
 
 # Inferencia local: data/data.csv como raw/ingest_date=$(INGEST_DATE)/ -> .local/scores/
 inference-local:

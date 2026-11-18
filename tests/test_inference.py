@@ -119,11 +119,24 @@ def test_promote_exports_champion(tmp_path):
     seg = tmp_path / "segment_map.json"
     seg.write_text(json.dumps({"0": "VIP", "1": "Dormido"}))
     export = tmp_path / "models" / "champion"
-    promote.main(["--tracking-uri", uri, "--run-id", run.info.run_id, "--segment-map", str(seg),
-                  "--export-uri", str(export)])
+    base = ["--tracking-uri", uri, "--export-uri", str(export), "--promoted-by", "ana"]
+    with pytest.raises(SystemExit):  # sin --reason no se promueve
+        promote.main(base + ["--run-id", run.info.run_id, "--segment-map", str(seg)])
+    for _ in range(2):  # v1 y v2 del mismo run
+        promote.main(base + ["--run-id", run.info.run_id, "--segment-map", str(seg), "--reason", "ok"])
 
     champ = load_champion(export)
     assert champ.manifest["run_id"] == run.info.run_id
-    assert champ.manifest["model_version"] == "1"
+    assert champ.manifest["model_version"] == "2"
     assert champ.segment_map == {0: "VIP", 1: "Dormido"}
     np.testing.assert_array_equal(champ.model.cluster_centers_, model.cluster_centers_)
+
+    client = mlflow.tracking.MlflowClient()
+    tags = client.get_model_version(promote.MODEL_NAME, "2").tags
+    assert (tags["action"], tags["promoted_by"], tags["reason"]) == ("promote", "ana", "ok")
+    assert tags["segment_map"] == str(seg)
+
+    # rollback: @champion vuelve a v1 y se re-exporta
+    promote.main(base + ["--version", "1", "--reason", "v2 mala"])
+    assert load_champion(export).manifest["model_version"] == "1"
+    assert client.get_model_version(promote.MODEL_NAME, "1").tags["action"] == "rollback"

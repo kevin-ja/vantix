@@ -18,3 +18,9 @@ variable "mlflow_server_size" {
   type        = string
   default     = "Small"
 }
+
+variable "github_repo" {
+  description = "Repositorio (owner/nombre) cuyos workflows pueden asumir roles vía OIDC."
+  type        = string
+  default     = "kevin-ja/vantix"
+}

@@ -1,0 +1,104 @@
+# Promoción manual del modelo (docs/arch_mlops.md §5). La decisión la toma un especialista; este workflow
+# solo la ejecuta y la deja auditada (tags promoted_by, reason, segment_map en la versión del registry).
+#
+#   promote : run_id + segment_map (archivo en segment_maps/, versionado por PR) + reason
+#   rollback: version (del registry) + reason
+#
+# Requisitos en GitHub:
+#   - environment "production" con aprobador obligatorio (Settings → Environments)
+#   - variables: AWS_ROLE_ARN (rol OIDC), DATA_BUCKET, MLFLOW_TRACKING_ARN
+name: promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "promote | rollback"
+        type: choice
+        options: [promote, rollback]
+        default: promote
+      run_id:
+        description: "promote: run hijo de MLflow elegido"
+        required: false
+      segment_map:
+        description: "promote: ruta en el repo, p. ej. segment_maps/2025-04-30_k5.json"
+        required: false
+      version:
+        description: "rollback: versión del registry a la que vuelve @champion"
+        required: false
+      reason:
+        description: "Justificación de la decisión (obligatoria)"
+        required: true
+
+permissions:
+  id-token: write   # OIDC con AWS
+  contents: read
+
+concurrency:
+  group: promote    # nunca dos promociones a la vez
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    env:
+      AWS_REGION: us-east-1
+      MLFLOW_SERVER: vantix-mlflow
+      MLFLOW_TRACKING_URI: ${{ vars.MLFLOW_TRACKING_ARN }}
+      EXPORT_URI: s3://${{ vars.DATA_BUCKET }}/models/champion
+      # Los inputs pasan por variables de entorno (nunca interpolados en el shell).
+      ACTION: ${{ inputs.action }}
+      RUN_ID: ${{ inputs.run_id }}
+      SEGMENT_MAP: ${{ inputs.segment_map }}
+      VERSION: ${{ inputs.version }}
+      REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Encender MLflow (si está apagado)
+        id: mlflow
+        run: |
+          status=$(aws sagemaker describe-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER" \
+            --query TrackingServerStatus --output text)
+          if [ "$status" = "Stopped" ]; then
+            aws sagemaker start-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER"
+            echo "started=true" >> "$GITHUB_OUTPUT"
+          fi
+          for _ in $(seq 1 80); do
+            status=$(aws sagemaker describe-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER" \
+              --query TrackingServerStatus --output text)
+            [ "$status" = "Started" ] && exit 0
+            sleep 15
+          done
+          echo "MLflow no arrancó (estado: $status)"; exit 1
+
+      - name: Promover o hacer rollback
+        run: |
+          if [ "$ACTION" = "promote" ]; then
+            test -n "$RUN_ID" -a -n "$SEGMENT_MAP" || { echo "promote requiere run_id y segment_map"; exit 1; }
+            test -f "$SEGMENT_MAP" || { echo "$SEGMENT_MAP no existe en el repo (súbelo por PR)"; exit 1; }
+            python -m pipelines.training.promote --run-id "$RUN_ID" --segment-map "$SEGMENT_MAP" \
+              --reason "$REASON" --export-uri "$EXPORT_URI"
+          else
+            test -n "$VERSION" || { echo "rollback requiere version"; exit 1; }
+            python -m pipelines.training.promote --version "$VERSION" --reason "$REASON" --export-uri "$EXPORT_URI"
+          fi
+          aws s3 cp "$EXPORT_URI/manifest.json" - | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Apagar MLflow (solo si lo encendió este workflow)
+        if: always() && steps.mlflow.outputs.started == 'true'
+        run: aws sagemaker stop-mlflow-tracking-server --tracking-server-name "$MLFLOW_SERVER"

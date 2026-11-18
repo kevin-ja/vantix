@@ -41,6 +41,29 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
   }
 }
 
+# Benchmark fijo (docs/arch_mlops.md §5.1): models/benchmark/ se escribe una sola vez (make benchmark-freeze)
+# y luego nadie lo modifica ni lo borra, ni siquiera un administrador. Para cambiarlo hay que quitar esta
+# política a propósito (PR + terraform apply).
+data "aws_iam_policy_document" "data_bucket" {
+  statement {
+    sid       = "FreezeBenchmark"
+    effect    = "Deny"
+    actions   = ["s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion", "s3:PutObjectTagging"]
+    resources = ["${aws_s3_bucket.data.arn}/models/benchmark/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "data" {
+  bucket = aws_s3_bucket.data.id
+  policy = data.aws_iam_policy_document.data_bucket.json
+
+  depends_on = [aws_s3_bucket_public_access_block.data]
+}
+
 # ---------------------------------------------------------------------------
 # MLflow administrado por SageMaker
 # ---------------------------------------------------------------------------
