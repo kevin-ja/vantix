@@ -3,7 +3,7 @@
 #   make venv           entorno local (Python fijo + deps con hash) para tests y lock
 #   make lock           regenera los locks de Python (docker/ y tests/) desde los .in
 #   make up             crea/actualiza todo: ECR → imagen → infra (la EC2 se reemplaza si cambia la imagen/config)
-#   make image          construye (linux/amd64) y sube la imagen con tag = commit de mlflow_server/
+#   make image          construye (linux/amd64) y sube la imagen con tag = commit de mlflow_server/docker/
 #   make plan           terraform plan
 #   make start | stop | status    encender / apagar / ver la EC2 (el estado vive en S3)
 #   make url | password           URL del servidor / contraseña de admin (usuario: admin)
@@ -24,8 +24,8 @@ PYTHON_VERSION := 3.11.18
 
 TF       := terraform -chdir=infra
 VENV_PY  := .venv/bin/python
-# Tag inmutable: último commit que tocó mlflow_server/ (cambia solo si cambia el servidor).
-IMAGE_TAG = $(shell git log -1 --format=%h -- .)
+# Tag inmutable: último commit que tocó docker/ (cambia solo si cambia la imagen; la config no la recompila).
+IMAGE_TAG = $(shell git log -1 --format=%h -- docker)
 AWS       = aws $(if $(AWS_PROFILE),--profile $(AWS_PROFILE)) --region $(REGION)
 TF_VARS   = -var=name=$(NAME) -var=region=$(REGION) -var=image_tag=$(IMAGE_TAG) \
             $(if $(AWS_PROFILE),-var=aws_profile=$(AWS_PROFILE))

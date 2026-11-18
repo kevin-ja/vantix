@@ -10,6 +10,7 @@ locals {
   artifacts_prefix  = "artifacts"
   registry_prefix   = "registry"
   password_param    = "/${var.name}/admin-password"
+  secret_key_param  = "/${var.name}/flask-secret-key"
   image_uri         = "${aws_ecr_repository.mlflow.repository_url}:${var.image_tag}"
   ecr_registry_host = split("/", aws_ecr_repository.mlflow.repository_url)[0]
 }
@@ -91,6 +92,18 @@ resource "aws_ssm_parameter" "admin_password" {
   value = random_password.admin.result
 }
 
+# Clave de Flask para CSRF (la exige basic auth). Fija: sobrevive al reemplazo de la EC2 (sesiones válidas).
+resource "random_password" "flask_secret_key" {
+  length  = 64
+  special = false
+}
+
+resource "aws_ssm_parameter" "flask_secret_key" {
+  name  = local.secret_key_param
+  type  = "SecureString"
+  value = random_password.flask_secret_key.result
+}
+
 # ---------------------------------------------------------------------------
 # IAM de la EC2: SSM (sin SSH), leer la imagen, leer la contraseña, leer/escribir su bucket
 # ---------------------------------------------------------------------------
@@ -126,9 +139,9 @@ data "aws_iam_policy_document" "mlflow" {
     resources = [aws_ecr_repository.mlflow.arn]
   }
   statement {
-    sid       = "AdminPassword"
+    sid       = "Secrets"
     actions   = ["ssm:GetParameter"]
-    resources = [aws_ssm_parameter.admin_password.arn]
+    resources = [aws_ssm_parameter.admin_password.arn, aws_ssm_parameter.flask_secret_key.arn]
   }
   statement {
     sid       = "Bucket"
@@ -233,6 +246,7 @@ resource "aws_instance" "mlflow" {
     artifacts_prefix = local.artifacts_prefix
     registry_prefix  = local.registry_prefix
     password_param   = aws_ssm_parameter.admin_password.name
+    secret_key_param = aws_ssm_parameter.flask_secret_key.name
     allowed_host     = aws_eip.mlflow.public_dns
   })
   user_data_replace_on_change = true
