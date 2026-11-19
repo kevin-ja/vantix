@@ -55,7 +55,7 @@ Seguimiento en SageMaker Studio → Pipelines → `vantix-training`. Después, e
 2. Elegir k según los criterios de `docs/training_pipeline_arch.md` §3.8.
 3. Comparar contra el benchmark fijo `s3://…/models/benchmark/` (perfil de clusters y métricas por k).
 4. Nombrar los grupos en `segment_maps/<snapshot_date>_k<k>.json` (por PR).
-5. Promover desde GitHub (Actions → promote, con aprobación) o en local: `make promote RUN_ID=<run hijo> SEGMENT_MAP=segment_maps/… REASON="…"` → `@champion` + exporta a `s3://…/models/champion/`. Rollback: `make rollback VERSION=<n> REASON="…"`. Detalle: [`docs/arch_mlops.md`](docs/arch_mlops.md) §5.
+5. Promover desde GitHub (Actions → `promote_best_model_manual`, con aprobación) o en local: `make promote RUN_ID=<run hijo> SEGMENT_MAP=segment_maps/… REASON="…"` → `@champion` + exporta a `s3://…/models/champion/`. Rollback: `rollback_model_manual` o `make rollback VERSION=<n> REASON="…"`.
 
 ## AWS: inferencia
 
@@ -67,7 +67,17 @@ make inference-run INF_SNAPSHOT=2025-04-30 SCORING_DATE=2025-05-01   # datos his
 make schedule-on                    # tras validar la corrida: cada lunes 06:00 UTC con fechas "auto"
 ```
 
-Salida: `s3://vantix-<cuenta>-scores/scores/scoring_date=…/scores.parquet` + `summary.json`, y `scores/latest.json` (lo lee la API de campañas). Rollback: reasignar `@champion` en MLflow → `make promote-export`.
+Desde GitHub: Actions → `batch_inference_manual` (con aprobación). Salida: `s3://vantix-<cuenta>-scores/scores/scoring_date=…/scores.parquet` + `summary.json`, y `scores/latest.json` (lo lee la API de campañas).
+
+## CI/CD (GitHub Actions)
+
+| Workflow | Disparo |
+|---|---|
+| `code_quality_check` | Automático: cada PR y push a `main` (lint, tests, Terraform) |
+| `deploy_inference` | Automático: merge con cambios en `pipelines/inference/`; manual con `ref` para rollback |
+| `train_pipeline_manual` | Manual: reentrenamiento (features + KMeans → MLflow) |
+| `promote_best_model_manual` · `rollback_model_manual` | Manual: cambiar `@champion` |
+| `batch_inference_manual` | Manual: puntuar con el `@champion` vigente |
 
 ## Costos
 

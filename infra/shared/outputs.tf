@@ -19,7 +19,7 @@ output "github_promote_role_arn" {
   value = aws_iam_role.github_promote.arn
 }
 
-# Variables AWS_ROLE_ARN de train.yml y deploy-inference.yml.
+# Variables GH_*_ROLE_ARN de train_pipeline_manual.yml, deploy_inference.yml y batch_inference_manual.yml.
 output "github_train_role_arn" {
   value = aws_iam_role.github_pipeline["train"].arn
 }
@@ -44,3 +44,8 @@ output "mlflow_password_param_arn" {
 output "mlflow_instance_name" {
   value = local.mlflow_instance_name
 }
+
+output "github_batch_inference_role_arn" {
+  value = aws_iam_role.github_batch_inference.arn
+}
+

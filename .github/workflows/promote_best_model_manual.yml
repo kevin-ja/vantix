@@ -1,0 +1,86 @@
+# Promoción manual del mejor modelo (docs/arch_mlops.md §5). La decisión la toma un especialista tras evaluar
+# en MLflow contra models/benchmark/; este workflow solo la ejecuta y la deja auditada
+# (tags action, promoted_by, promoted_at, reason, segment_map en la versión del registry).
+# Registra el run elegido como nueva versión @champion y exporta el paquete a models/champion/ (lo usa la inferencia).
+# Volver atrás: rollback_model_manual.yml.
+name: promote_best_model_manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run hijo de MLflow elegido (el k a promover)"
+        required: true
+      segment_map:
+        description: "Nombres de los segmentos: archivo del repo, p. ej. segment_maps/2025-04-30_k5.json"
+        required: true
+      reason:
+        description: "Justificación de la decisión"
+        required: true
+
+permissions:
+  id-token: write   # OIDC con AWS
+  contents: read
+
+concurrency:
+  group: model-registry   # nunca dos promociones/rollbacks a la vez
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      AWS_REGION: us-east-1
+      MLFLOW_INSTANCE_NAME: vantix-mlflow-server   # tag Name de la EC2 (el id cambia al reemplazarse)
+      MLFLOW_TRACKING_URI: ${{ vars.MLFLOW_TRACKING_URI }}
+      MLFLOW_TRACKING_PASSWORD_PARAM: ${{ vars.MLFLOW_PASSWORD_PARAM }}
+      EXPORT_URI: s3://${{ vars.DATA_BUCKET }}/models/champion
+      # Los inputs pasan por variables de entorno (nunca interpolados en el shell).
+      RUN_ID: ${{ inputs.run_id }}
+      SEGMENT_MAP: ${{ inputs.segment_map }}
+      REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GH_PROMOTE_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Encender MLflow (si está apagado)
+        id: mlflow
+        run: |
+          read -r id state < <(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$MLFLOW_INSTANCE_NAME" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+            --query 'Reservations[0].Instances[0].[InstanceId,State.Name]' --output text)
+          echo "instance=$id" >> "$GITHUB_OUTPUT"
+          if [ "$state" = "stopping" ]; then aws ec2 wait instance-stopped --instance-ids "$id"; state=stopped; fi
+          if [ "$state" = "stopped" ]; then
+            aws ec2 start-instances --instance-ids "$id" > /dev/null
+            echo "started=true" >> "$GITHUB_OUTPUT"
+          fi
+          for _ in $(seq 1 60); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$MLFLOW_TRACKING_URI/health")" = 200 ] && exit 0
+            sleep 5
+          done
+          echo "MLflow no respondió en $MLFLOW_TRACKING_URI"; exit 1
+
+      - name: Promover
+        run: |
+          test -f "$SEGMENT_MAP" || { echo "$SEGMENT_MAP no existe en el repo (súbelo por PR)"; exit 1; }
+          python -m pipelines.training.promote --run-id "$RUN_ID" --segment-map "$SEGMENT_MAP" \
+            --reason "$REASON" --export-uri "$EXPORT_URI"
+          aws s3 cp "$EXPORT_URI/manifest.json" - | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Apagar MLflow (solo si lo encendió este workflow)
+        if: always() && steps.mlflow.outputs.started == 'true'
+        run: aws ec2 stop-instances --instance-ids "${{ steps.mlflow.outputs.instance }}" > /dev/null

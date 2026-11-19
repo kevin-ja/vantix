@@ -1,10 +1,10 @@
 # CD de la inferencia (docs/arch_mlops.md §6): actualiza el pipeline vantix-inference con el código de `ref`.
 #   - Automático: merge a main con cambios SOLO en pipelines/inference/.
 #     Cambios en pipelines/common/ o en dependencias NO se despliegan solos (training-serving skew):
-#     train.yml → evaluar → promote.yml → este workflow, a mano.
+#     train_pipeline_manual → evaluar → promote_best_model_manual → este workflow, a mano.
 #   - Rollback: lanzar a mano con `ref` = commit anterior (inference_git_commit de summary.json).
-# No ejecuta el pipeline: las inferencias las corre el scheduler semanal.
-name: deploy-inference
+# No ejecuta el pipeline: las inferencias se lanzan con batch_inference_manual.yml (el scheduler está apagado).
+name: deploy_inference
 
 on:
   push:
