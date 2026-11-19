@@ -1,7 +1,8 @@
-# CI (docs/arch_mlops.md §8): en cada PR y en cada push a main. Sin AWS.
+# Control de calidad del código (docs/arch_mlops.md §8): en cada PR y en cada push a main. No despliega ni usa AWS.
+# Es el check obligatorio para hacer merge a main (jobs `python` y `terraform`).
 #   - Python: lint (ruff) + tests (pytest)
 #   - Terraform: fmt + validate de las tres capas (sin backend)
-name: ci
+name: code_quality_check
 
 on:
   pull_request:

@@ -1,8 +1,9 @@
 # GitHub Actions → AWS sin llaves fijas (OIDC). Un rol por workflow, con solo los permisos que usa
 # (docs/arch_mlops.md). Los asumen únicamente los jobs del repo que corren en el environment "production".
-#   vantix-github-promote          promote.yml           (§5)
-#   vantix-github-train            train.yml             (§7, manual)
-#   vantix-github-deploy-inference deploy-inference.yml  (§6, ref → upsert; no ejecuta: eso lo hace el scheduler)
+#   vantix-github-promote          promote_best_model_manual.yml, rollback_model_manual.yml  (§5)
+#   vantix-github-train            train_pipeline_manual.yml                                  (§7)
+#   vantix-github-deploy-inference deploy_inference.yml          (§6, ref → upsert; no ejecuta)
+#   vantix-github-batch-inference  batch_inference_manual.yml    (§7, solo ejecuta; no actualiza el pipeline)
 
 resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
@@ -68,7 +69,7 @@ resource "aws_iam_role_policy" "github_promote" {
 }
 
 # ---------------------------------------------------------------------------
-# train.yml y deploy-inference.yml: subir el código y hacer upsert del pipeline (el de training además lo lanza).
+# train_pipeline_manual.yml y deploy_inference.yml: subir el código y hacer upsert del pipeline (el de training además lo lanza).
 # Los roles de ejecución y los pipelines viven en infra/training e infra/inference: se referencian por nombre.
 # ---------------------------------------------------------------------------
 locals {
@@ -143,9 +144,46 @@ resource "aws_iam_role_policy" "github_pipeline" {
   policy   = data.aws_iam_policy_document.github_pipeline[each.key].json
 }
 
-# train.yml enciende el MLflow propio si está apagado (el paso Train registra en él) y lo apaga al terminar.
+# train_pipeline_manual.yml enciende el MLflow propio si está apagado (el paso Train registra en él) y lo apaga al terminar.
 resource "aws_iam_role_policy" "github_train_mlflow" {
   name   = "mlflow-power"
   role   = aws_iam_role.github_pipeline["train"].id
   policy = data.aws_iam_policy_document.mlflow_power.json
 }
+
+# ---------------------------------------------------------------------------
+# batch_inference_manual.yml: solo EJECUTA vantix-inference (no lo actualiza, para no deshacer un rollback de
+# código) y lee latest.json del bucket de scores. Sin PassRole: el pipeline ya tiene su rol de ejecución.
+# ---------------------------------------------------------------------------
+resource "aws_iam_role" "github_batch_inference" {
+  name                 = "${var.project}-github-batch-inference"
+  assume_role_policy   = data.aws_iam_policy_document.github_production_trust.json
+  max_session_duration = 3600
+}
+
+data "aws_iam_policy_document" "github_batch_inference" {
+  statement {
+    sid = "RunInferencePipeline"
+    actions = [
+      "sagemaker:StartPipelineExecution",
+      "sagemaker:DescribePipelineExecution",
+      "sagemaker:ListPipelineExecutionSteps",
+    ]
+    resources = [
+      "arn:aws:sagemaker:${var.region}:${local.account_id}:pipeline/${var.project}-inference",
+      "arn:aws:sagemaker:${var.region}:${local.account_id}:pipeline/${var.project}-inference/*",
+    ]
+  }
+  statement {
+    sid       = "ReadLatestScores"
+    actions   = ["s3:GetObject"]
+    resources = ["arn:aws:s3:::${var.project}-${local.account_id}-scores/scores/latest.json"]
+  }
+}
+
+resource "aws_iam_role_policy" "github_batch_inference" {
+  name   = "batch-inference"
+  role   = aws_iam_role.github_batch_inference.id
+  policy = data.aws_iam_policy_document.github_batch_inference.json
+}
+

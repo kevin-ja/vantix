@@ -1,0 +1,78 @@
+# Inferencia batch manual (docs/arch_mlops.md §7): EJECUTA el pipeline vantix-inference ya desplegado con el
+# @champion vigente (models/champion/). No lo actualiza: eso es deploy_inference.yml (así un rollback de código
+# no se deshace). No usa MLflow. Salida: s3://<scores>/scores/scoring_date=…/ + latest.json.
+name: batch_inference_manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      ingest_date:
+        description: "Partición de raw/ a puntuar (ingest_date=…); auto = la última"
+        default: auto
+        required: true
+      snapshot_date:
+        description: "Fecha de corte de las features (YYYY-MM-DD); auto = scoring_date - 1"
+        default: auto
+        required: true
+      scoring_date:
+        description: "Fecha de la corrida (YYYY-MM-DD); auto = hoy (UTC)"
+        default: auto
+        required: true
+      window_days:
+        description: "Ventana en días (igual que en el entrenamiento)"
+        default: "30"
+        required: true
+
+permissions:
+  id-token: write   # OIDC con AWS
+  contents: read
+
+concurrency:
+  group: batch-inference
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    env:
+      AWS_REGION: us-east-1
+      PIPELINE: vantix-inference
+      INGEST_DATE: ${{ inputs.ingest_date }}
+      SNAPSHOT_DATE: ${{ inputs.snapshot_date }}
+      SCORING_DATE: ${{ inputs.scoring_date }}
+      WINDOW_DAYS: ${{ inputs.window_days }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GH_BATCH_INFERENCE_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Ejecutar vantix-inference
+        id: run
+        run: |
+          arn=$(aws sagemaker start-pipeline-execution --pipeline-name "$PIPELINE" \
+            --pipeline-execution-display-name "manual-${GITHUB_RUN_ID}" \
+            --pipeline-parameters \
+              Name=IngestDate,Value="$INGEST_DATE" Name=SnapshotDate,Value="$SNAPSHOT_DATE" \
+              Name=ScoringDate,Value="$SCORING_DATE" Name=WindowDays,Value="$WINDOW_DAYS" \
+            --query PipelineExecutionArn --output text)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+          echo "Ejecución: \`$arn\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Esperar a que termine
+        env:
+          ARN: ${{ steps.run.outputs.arn }}
+        run: |
+          while true; do
+            status=$(aws sagemaker describe-pipeline-execution --pipeline-execution-arn "$ARN" \
+              --query PipelineExecutionStatus --output text)
+            case "$status" in Executing|Stopping) sleep 30 ;; *) break ;; esac
+          done
+          aws sagemaker list-pipeline-execution-steps --pipeline-execution-arn "$ARN" \
+            --query "PipelineExecutionSteps[].[StepName,StepStatus,StartTime,EndTime,FailureReason]" --output table \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$status" = "Succeeded" ] || { echo "Estado: $status"; exit 1; }
+
+      - name: Resumen (latest.json)
+        run: aws s3 cp "s3://${{ vars.SCORES_BUCKET }}/scores/latest.json" - | tee -a "$GITHUB_STEP_SUMMARY"
