@@ -1,4 +1,4 @@
-# Recursos compartidos por training e inference: bucket de datos/artefactos y MLflow.
+# Recursos compartidos por training e inference: bucket de datos/artefactos (+ consumo del MLflow propio, mlflow.tf).
 
 data "aws_caller_identity" "current" {}
 
@@ -8,7 +8,7 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# S3: raw/, silver/, mlflow/ (artefactos), pipelines/ (código de los jobs)
+# S3: raw/, silver/, models/, pipelines/ (código de los jobs), mlflow/ (artefactos del MLflow viejo, solo lectura histórica)
 # ---------------------------------------------------------------------------
 resource "aws_s3_bucket" "data" {
   bucket = local.bucket_name
@@ -64,49 +64,6 @@ resource "aws_s3_bucket_policy" "data" {
   depends_on = [aws_s3_bucket_public_access_block.data]
 }
 
-# ---------------------------------------------------------------------------
-# MLflow administrado por SageMaker
-# ---------------------------------------------------------------------------
-data "aws_iam_policy_document" "sagemaker_trust" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["sagemaker.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "mlflow" {
-  name               = "${var.project}-mlflow"
-  assume_role_policy = data.aws_iam_policy_document.sagemaker_trust.json
-}
-
-data "aws_iam_policy_document" "mlflow_s3" {
-  statement {
-    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
-    resources = [aws_s3_bucket.data.arn]
-  }
-  statement {
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-    resources = ["${aws_s3_bucket.data.arn}/mlflow/*"]
-  }
-}
-
-resource "aws_iam_role_policy" "mlflow_s3" {
-  name   = "s3-artifacts"
-  role   = aws_iam_role.mlflow.id
-  policy = data.aws_iam_policy_document.mlflow_s3.json
-}
-
-resource "aws_sagemaker_mlflow_tracking_server" "this" {
-  tracking_server_name = "${var.project}-mlflow"
-  tracking_server_size = var.mlflow_server_size
-  role_arn             = aws_iam_role.mlflow.arn
-  artifact_store_uri   = "s3://${aws_s3_bucket.data.bucket}/mlflow"
-
-  # Registro solo en el Model Registry de MLflow (promoción manual con alias @champion).
-  automatic_model_registration = false
-
-  depends_on = [aws_iam_role_policy.mlflow_s3]
-}
+# MLflow: servidor propio en mlflow_server/ (ver mlflow.tf). El MLflow administrado de SageMaker se dio de baja
+# el 2026-11-18 tras migrar su registry; sus artefactos viejos siguen en s3://…/mlflow/ (mapa de IDs en
+# s3://…/mlflow-migration/).
