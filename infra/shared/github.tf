@@ -48,16 +48,16 @@ data "aws_iam_policy_document" "github_promote" {
     actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
     resources = [aws_s3_bucket.data.arn]
   }
-  # Leer artefactos del run (MLflow) y escribir segment_map en el run + el champion exportado.
+  # Artefactos de MLflow: por el proxy del servidor propio (sin S3). Aquí solo el champion exportado.
   statement {
-    sid       = "ReadArtifacts"
+    sid       = "ReadModels"
     actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.data.arn}/mlflow/*", "${aws_s3_bucket.data.arn}/models/*"]
+    resources = ["${aws_s3_bucket.data.arn}/models/*"]
   }
   statement {
-    sid       = "WriteArtifacts"
+    sid       = "WriteChampion"
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.data.arn}/mlflow/*", "${aws_s3_bucket.data.arn}/models/champion/*"]
+    resources = ["${aws_s3_bucket.data.arn}/models/champion/*"]
   }
 }
 

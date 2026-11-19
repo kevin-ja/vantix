@@ -13,12 +13,6 @@ variable "project" {
   default = "vantix"
 }
 
-variable "mlflow_server_size" {
-  description = "Small | Medium | Large. Small cuesta USD 0,60/h mientras está encendido."
-  type        = string
-  default     = "Small"
-}
-
 variable "github_repo" {
   description = <<-EOT
     Repositorio cuyos workflows pueden asumir roles vía OIDC, tal como lo envía GitHub en el claim `sub`:

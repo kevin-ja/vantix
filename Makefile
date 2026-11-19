@@ -5,7 +5,7 @@
 #   make up-inference      levanta shared (si falta) + inference
 #   make down-training     baja solo training (shared queda)
 #   make down-inference    baja solo inference (shared queda)
-#   make down-shared       baja S3/MLflow (pide CONFIRM=yes)
+#   make down-shared       baja S3 de datos (pide CONFIRM=yes)
 #   make down-all          baja todo (pide CONFIRM=yes)
 # MLflow propio (EC2 de mlflow_server/; ~USD 0,03/h encendido, arranca en ~30 s)
 #   make mlflow-start | mlflow-stop | mlflow-status
@@ -89,7 +89,7 @@ define tf_down
 endef
 
 define require_confirm
-	@test "$(CONFIRM)" = "yes" || { echo "Borra S3 (datos y modelos) y MLflow. Repite con CONFIRM=yes"; exit 1; }
+	@test "$(CONFIRM)" = "yes" || { echo "Borra el S3 de datos (incluidos los modelos). Repite con CONFIRM=yes"; exit 1; }
 endef
 
 tf_output = $(shell $(TF) -chdir=$(INFRA)/$(1) output -raw $(2))
