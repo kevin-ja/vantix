@@ -9,7 +9,7 @@
 #   make current-image  tag vigente del backend (puntero SSM)
 #   make set-image TAG=<tag>   mueve el puntero (rollback a una imagen anterior de ECR)
 #   make plan           terraform plan
-#   make start | stop | status    encender / apagar / ver la EC2
+#   make start | stop | status    encender / apagar (esperan mostrando el estado) / ver la EC2
 #   make url | password           URL de Grafana / contraseña de admin
 #   make benchmark INGEST_DATE=2025-04-30   job build_benchmark (una vez, y al promover un champion nuevo)
 #   make run [INGEST_DATE=…]                job run_monitoring (por defecto: última partición de raw/)
@@ -92,11 +92,25 @@ plan: init
 	$(TF) plan -input=false $(TF_VARS)
 
 # --- operación ----------------------------------------------------------------------------
+# start/stop esperan mostrando el estado en tiempo real (start: hasta que Grafana responde; stop: hasta `stopped`).
 start:
-	$(AWS) ec2 start-instances --instance-ids $(call out,instance_id) >/dev/null && echo "Arrancando…"
+	@id=$(call out,instance_id); url=$(call out,grafana_url); \
+	$(AWS) ec2 start-instances --instance-ids $$id >/dev/null; \
+	while :; do \
+		st=$$($(AWS) ec2 describe-instances --instance-ids $$id --query "Reservations[0].Instances[0].State.Name" --output text); \
+		code=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 $$url/api/health); \
+		printf '\r%s  EC2 %-10s Grafana %s ' "$$(date +%T)" "$$st" "$$code"; \
+		[ "$$code" = 200 ] && break; sleep 5; \
+	done; echo; echo "Listo: $$url"
 
 stop:
-	$(AWS) ec2 stop-instances --instance-ids $(call out,instance_id) >/dev/null && echo "Apagando…"
+	@id=$(call out,instance_id); \
+	$(AWS) ec2 stop-instances --instance-ids $$id >/dev/null; \
+	while :; do \
+		st=$$($(AWS) ec2 describe-instances --instance-ids $$id --query "Reservations[0].Instances[0].State.Name" --output text); \
+		printf '\r%s  EC2 %-10s ' "$$(date +%T)" "$$st"; \
+		[ "$$st" = stopped ] && break; sleep 5; \
+	done; echo; echo "Apagada (solo se siguen cobrando el disco y la IP fija)."
 
 status:
 	@$(AWS) ec2 describe-instances --instance-ids $(call out,instance_id) \
