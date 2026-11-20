@@ -49,13 +49,22 @@ Entra **data nueva**, no la data histórica (con la que el modelo ha sido entren
 
 ### 3.1. Sub-pipeline 1: Data Quality Measurement
 
-Trabaja sobre los datos de entrada y calcula cinco métricas:
+Trabaja sobre los datos de entrada y calcula cinco métricas sobre las 8 columnas que entran en el cálculo de las 5 dimensiones RFM: `TransId`, `TransDate`, `UserName`, `Actual_Stake`, `ActualRate`, `Winlost`, `Odds`, `BetType`.
 
-1. Cantidad de nulos.
-2. Cantidad de valores duplicados.
-3. Cantidad de valores inválidos.
-4. Consistencia de las columnas.
-5. Completitud de los datos de las columnas.
+| Métrica | Definición | ✅ Bien | ❌ Mal | Criterio (para el cálculo) |
+|---|---|---|---|---|
+| **Nulos** | Alguna de las 8 columnas viene vacía. | Toda apuesta trae `UserName`, `Actual_Stake` y `Odds`. | Apuesta sin `UserName` o sin `Actual_Stake`. | Es nulo: `NaN`, `None`, `NaT`, string vacío `""` o solo espacios. **El 0 no es nulo.** |
+| **Duplicados** | La misma apuesta aparece dos veces con todos sus valores iguales. | Cada `TransId` aparece una sola vez. | `TransId=151823612` dos veces con los mismos valores. | Filas idénticas en todas sus columnas (`df.duplicated()`), mismo criterio que `clean()` en entrenamiento. |
+| **Valores inválidos** | Un valor imposible para su columna, mirado por sí solo. | `Actual_Stake=85.6`, `Odds=-1.07`, `BetType=9`. | `Actual_Stake=0`, `Odds=0`, `BetType=12`. | Válido si: `TransId` entero > 0 · `TransDate` fecha parseable y no futura · `UserName` cumple `user_<número>` · `Actual_Stake` > 0 · `ActualRate` > 0 · `Winlost` ≥ 0 · `Odds` ≠ 0 · `BetType` ∈ {1…9}. |
+| **Consistencia** | Valores válidos por separado que juntos no tienen sentido. | `BetType=5` con `Odds=1.85`; `Stake=100`, `Odds=2.0`, `Winlost=200`. | `BetType=5` con `Odds=0.9`; `Stake=100`, `Odds=2.0`, `Winlost=500`. | 1) `BetType` ∈ {4, 5, 6, 8} (cuota decimal) → `Odds` > 1. 2) `Winlost` ≤ `Actual_Stake` × cuota decimal (`odds_to_decimal`), tolerancia 0,01 % por redondeo. 3) Un mismo `TransId` siempre con el mismo contenido. |
+| **Completitud** | El lote cubre los 30 días de la ventana, sin días faltantes. | Ventana 04-01 → 04-30 con apuestas los 30 días. | Faltan 04-25 → 04-30. | 1) Cada día de `[snapshot_date − 29, snapshot_date]` tiene ≥ 1 fila. 2) El `TransDate` máximo cae en `snapshot_date` (si no, Recency sale inflada). |
+
+Notas (verificadas en `data/data.csv`, 842.163 filas):
+
+- **El 0 no es nulo:** `Winlost` (lo devuelto al apostador) vale 0 cuando pierde (381.873 filas, 82 % de las `LOSE`). Donde el 0 es imposible (`Actual_Stake`, `ActualRate`, `Odds`), lo detecta la métrica de inválidos.
+- **Cuotas:** decimales (4, 5, 6, 8) entre 1,01 y 300; asiáticas (1, 2, 3, 7, 9) entre −100 y 11,11, pueden ser negativas, por eso solo se exige `Odds` ≠ 0.
+- **`ActualRate`:** 18 valores (uno por moneda); no se restringe a esa lista porque una moneda nueva no es un error.
+- **`TransDate` anterior a la ventana** no es inválido: el pipeline lo filtra a propósito.
 
 Los resultados se almacenan en la tabla **`data_quality`** (PostgreSQL).
 
