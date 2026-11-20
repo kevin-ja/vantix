@@ -1,0 +1,7 @@
+# Extiende el ruff.toml de la raíz (lo usa el CI con `ruff check .`). El backend corre en Python 3.11
+# (no en el contenedor sklearn de SageMaker) y sus paquetes propios son monitoring + pipelines.
+extend = "../ruff.toml"
+target-version = "py311"
+
+[lint.isort]
+known-first-party = ["monitoring", "pipelines"]

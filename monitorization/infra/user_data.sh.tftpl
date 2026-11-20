@@ -1,0 +1,93 @@
+#!/bin/bash
+# Arranque de la EC2 (cloud-init, una vez por instancia). Lo ejecuta la máquina, no una persona.
+# Todo lo variable viene de Terraform; nada se descarga sin versión fija.
+set -euxo pipefail
+
+# 0. Swap de 2 GB: red de seguridad para el job de pandas (t3.small = 2 GB de RAM).
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap defaults 0 0' >> /etc/fstab
+
+# 1. Volumen EBS de datos (Postgres + Grafana). Terraform lo adjunta después de crear la EC2: se espera.
+#    Solo se formatea si está vacío (primera vez); en un reemplazo de la EC2 conserva los datos.
+dev=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${data_volume_id}
+for _ in $(seq 1 60); do [ -e "$dev" ] && break; sleep 5; done
+[ -e "$dev" ]
+blkid "$dev" || mkfs.xfs "$dev"
+mkdir -p /data
+echo "UUID=$(blkid -s UUID -o value "$dev") /data xfs defaults,nofail 0 2" >> /etc/fstab
+mount /data
+mkdir -p /data/postgres /data/grafana
+chown 472:0 /data/grafana  # usuario de Grafana en su imagen
+
+# 2. Docker (versión fijada por la AMI) + Compose (versión + sha256)
+dnf install -y docker
+plugins=/usr/local/lib/docker/cli-plugins
+mkdir -p "$plugins"
+curl -fsSL -o "$plugins/docker-compose" \
+  "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64"
+echo "${compose_sha256}  $plugins/docker-compose" | sha256sum -c -
+chmod +x "$plugins/docker-compose"
+systemctl enable --now docker
+
+# 3. Archivos (los mismos del repo) + variables. Los secretos vienen de SSM, no de user_data.
+mkdir -p /opt/monitoring
+echo "${compose_b64}" | base64 -d > /opt/monitoring/compose.yml
+# Deploy + ejecución (server/monitoring.sh): resuelve la imagen vigente desde el puntero SSM y corre los jobs.
+echo "${monitoring_sh_b64}" | base64 -d > /opt/monitoring/monitoring.sh
+chmod 755 /opt/monitoring/monitoring.sh
+# Configuración publicada por Terraform (versión ${config_hash}): provisioning de Grafana y esquema de Postgres.
+aws s3 sync --region "${region}" --delete "s3://${monitoring_bucket}/grafana/" /opt/monitoring/grafana/
+aws s3 sync --region "${region}" --delete "s3://${monitoring_bucket}/db/" /opt/monitoring/db/
+secret() { aws ssm get-parameter --region "${region}" --name "$1" --with-decryption --query Parameter.Value --output text; }
+postgres_password=$(secret "${postgres_pwd_param}")
+grafana_password=$(secret "${grafana_pwd_param}")
+smtp_user=$(secret "${smtp_user_param}")
+smtp_password=$(secret "${smtp_password_param}")
+umask 077
+cat > /opt/monitoring/.env <<EOF
+AWS_REGION=${region}
+ECR_REPO=${ecr_repo}
+IMAGE_PARAM=${image_param}
+DATA_BUCKET=${data_bucket}
+MONITORING_BUCKET=${monitoring_bucket}
+POSTGRES_PASSWORD=$postgres_password
+GRAFANA_ADMIN_PASSWORD=$grafana_password
+GRAFANA_ROOT_URL=https://${grafana_domain}
+GRAFANA_DOMAIN=${grafana_domain}
+SMTP_HOST=${smtp_host}
+SMTP_USER=$smtp_user
+SMTP_PASSWORD=$smtp_password
+ALERT_EMAIL=${alert_email}
+EOF
+umask 022
+
+# 4. Servicio systemd: en cada arranque (también tras stop/start) resuelve la imagen vigente (puntero SSM),
+#    hace login en ECR y levanta db + restore + frontend.
+#    El backend no se levanta aquí: es un job (docker compose run backend <job>).
+cat > /etc/systemd/system/monitoring.service <<EOF
+[Unit]
+Description=Vantix monitoring (compose: db + frontend)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/monitoring
+ExecStartPre=/opt/monitoring/monitoring.sh prepare
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=900
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now monitoring.service

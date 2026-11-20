@@ -1,0 +1,129 @@
+# Corrida manual del monitoreo (monitorization/doc/ci_cd.md): la lanza el especialista cuando lo decide,
+# desde la consola, sin clonar el repo:
+#   gh workflow run run_monitoring_manual.yml -R kevin-ja/vantix -f ingest_date=2025-07-31
+# Enciende la EC2 si está apagada (API de EC2, no Terraform) y por SSM ejecuta server/monitoring.sh, que
+# toma la imagen vigente (puntero SSM que escribe ci_monitoring.yml), la descarga y corre el job.
+# Sin aprobación: solo lee datos y escribe métricas; no cambia nada de producción.
+name: run_monitoring_manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "run_monitoring = data nueva · build_benchmark = benchmark del champion vigente"
+        type: choice
+        options: [run_monitoring, build_benchmark]
+        default: run_monitoring
+      ingest_date:
+        description: "Partición de raw/ (YYYY-MM-DD). auto = la última (solo run_monitoring)"
+        default: auto
+        required: true
+      snapshot_date:
+        description: "Fecha de corte (YYYY-MM-DD). auto = ingest_date − 1 día (solo run_monitoring)"
+        default: auto
+        required: true
+      stop_after:
+        description: "Apagar la EC2 al terminar (espera 2 min para que Grafana evalúe y envíe la alerta)"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write   # OIDC con AWS
+  contents: read
+
+concurrency:
+  group: monitoring-run   # una corrida a la vez
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AWS_REGION: us-east-1
+      SERVER_TAG: vantix-monitoring-server
+      IMAGE_PARAM: /vantix-monitoring/backend-image
+      JOB: ${{ inputs.job }}
+      INGEST_DATE: ${{ inputs.ingest_date }}
+      SNAPSHOT_DATE: ${{ inputs.snapshot_date }}
+    steps:
+      - name: Validar parámetros
+        run: |
+          for v in "$INGEST_DATE" "$SNAPSHOT_DATE"; do
+            [[ "$v" == auto || "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "Fecha inválida: $v"; exit 1; }
+          done
+          if [ "$JOB" = build_benchmark ] && [ "$INGEST_DATE" = auto ]; then
+            echo "build_benchmark necesita ingest_date (la partición con la que se entrenó el champion)"; exit 1
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GH_MONITORING_RUN_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Encender la EC2 si está apagada
+        id: server
+        run: |
+          read -r id state < <(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$SERVER_TAG" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+            --query "Reservations[0].Instances[0].[InstanceId,State.Name]" --output text)
+          if [ -z "$id" ] || [ "$id" = None ]; then echo "No existe la EC2 $SERVER_TAG (make up)"; exit 1; fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "EC2 $id: $state"
+          if [ "$state" = stopping ]; then aws ec2 wait instance-stopped --instance-ids "$id"; state=stopped; fi
+          if [ "$state" = stopped ]; then
+            aws ec2 start-instances --instance-ids "$id" >/dev/null
+            echo "started=true" >> "$GITHUB_OUTPUT"
+          fi
+          aws ec2 wait instance-running --instance-ids "$id"
+          for _ in $(seq 60); do
+            ping=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$id" \
+              --query "InstanceInformationList[0].PingStatus" --output text)
+            [ "$ping" = Online ] && break
+            sleep 10
+          done
+          [ "$ping" = Online ] || { echo "La EC2 no responde por SSM"; exit 1; }
+
+      - name: Ejecutar el job en el servidor (SSM)
+        id: ssm
+        env:
+          ID: ${{ steps.server.outputs.id }}
+          GRAFANA_URL: ${{ vars.MONITORING_GRAFANA_URL }}
+        run: |
+          tag=$(aws ssm get-parameter --name "$IMAGE_PARAM" --query Parameter.Value --output text)
+          echo "Imagen vigente: $tag"
+          args="$JOB --ingest-date $INGEST_DATE"
+          [ "$JOB" = run_monitoring ] && args="$args --snapshot-date $SNAPSHOT_DATE"
+          # Tras un arranque, espera a que systemd termine de levantar db + restore + frontend.
+          cmd="for i in \$(seq 120); do systemctl is-active --quiet monitoring.service && break; sleep 5; done; /opt/monitoring/monitoring.sh run $args"
+          params=$(jq -n --arg c "$cmd" '{commands: [$c], executionTimeout: ["3000"]}')
+          cid=$(aws ssm send-command --instance-ids "$ID" --document-name AWS-RunShellScript \
+            --comment "run_monitoring_manual #${GITHUB_RUN_NUMBER}" --parameters "$params" \
+            --query Command.CommandId --output text)
+          echo "SSM $cid: monitoring.sh run $args"
+          while true; do
+            status=$(aws ssm get-command-invocation --command-id "$cid" --instance-id "$ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in Pending|InProgress|Delayed) sleep 10 ;; *) break ;; esac
+          done
+          aws ssm get-command-invocation --command-id "$cid" --instance-id "$ID" \
+            --query StandardOutputContent --output text > out.log
+          aws ssm get-command-invocation --command-id "$cid" --instance-id "$ID" \
+            --query StandardErrorContent --output text > err.log
+          cat out.log err.log
+          {
+            echo "### $JOB · ingest_date=$INGEST_DATE · imagen \`$tag\` · $status"
+            echo '```'
+            { grep -hE "imagen del backend|restore:|benchmark v|corrida [0-9]+:|Error|error" out.log err.log || true; } | tail -20
+            echo '```'
+            if [ -n "$GRAFANA_URL" ]; then echo "Dashboard: $GRAFANA_URL/d/vantix-monitoring"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$status" = Success ] || { echo "Estado SSM: $status"; exit 1; }
+
+      - name: Apagar la EC2
+        if: inputs.stop_after && success()
+        env:
+          ID: ${{ steps.server.outputs.id }}
+        run: |
+          sleep 120   # Grafana evalúa las reglas cada 1 min: así alcanza a enviar la alerta
+          aws ec2 stop-instances --instance-ids "$ID" >/dev/null
+          echo "EC2 apagada." >> "$GITHUB_STEP_SUMMARY"

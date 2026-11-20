@@ -1,0 +1,714 @@
+{
+  "uid": "vantix-monitoring",
+  "title": "Vantix · Monitorización",
+  "tags": [
+    "vantix",
+    "monitoring"
+  ],
+  "timezone": "utc",
+  "editable": false,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "",
+  "templating": {
+    "list": [
+      {
+        "name": "run",
+        "label": "Corrida",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "monitoring-pg"
+        },
+        "query": "SELECT run_id AS __value, ingest_date::text || '  (run ' || run_id || ')' AS __text FROM runs WHERE dataset='new' ORDER BY run_id DESC",
+        "definition": "runs (dataset = new)",
+        "refresh": 1,
+        "sort": 0,
+        "includeAll": false,
+        "multi": false,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Corrida seleccionada",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Alertas de Data Quality",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FROM data_quality WHERE alert AND run_id=$run"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "value"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Alertas de Data Drift",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FROM data_drift WHERE alert AND run_id=$run"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "value"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Transacciones del lote",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT n_rows FROM runs WHERE run_id=$run"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "value"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Usuarios (ventana 30 días)",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT n_users FROM runs WHERE run_id=$run"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "value"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Contexto de la corrida",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT r.ingest_date::text AS \"Ingesta\", r.snapshot_date::text AS \"Snapshot\", r.window_days AS \"Ventana (días)\", r.model_version AS \"Champion\", b.ingest_date::text AS \"Benchmark (ingesta)\", r.git_commit AS \"Commit\", to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI') || ' UTC' AS \"Ejecutada\" FROM runs r LEFT JOIN runs b ON b.run_id=(SELECT max(run_id) FROM runs WHERE dataset='benchmark' AND model_version=(SELECT model_version FROM runs WHERE run_id=$run)) WHERE r.run_id=$run"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 3
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Data Quality (doc §3.1, umbrales §5.3)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Data Quality: corrida vs. benchmark",
+      "description": "Nulos, inválidos, consistencia y completitud: > 0 → alerta. Duplicados: alerta desde moderado (≥ 0,5 %).",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT CASE q.metric WHEN 'nulls' THEN 'Nulos' WHEN 'duplicates' THEN 'Duplicados' WHEN 'invalid' THEN 'Valores inválidos' WHEN 'consistency' THEN 'Consistencia' WHEN 'completeness' THEN 'Completitud' END AS \"Métrica\", round(b.value::numeric,4) AS \"Benchmark\", round(q.value::numeric,4) AS \"Corrida\", q.unit AS \"Unidad\", q.level AS \"Nivel\", CASE WHEN q.alert THEN 'ALERTA' ELSE 'OK' END AS \"Estado\", q.details::text AS \"Detalle\" FROM data_quality q LEFT JOIN data_quality b ON b.metric=q.metric AND b.run_id=(SELECT max(run_id) FROM runs WHERE dataset='benchmark' AND model_version=(SELECT model_version FROM runs WHERE run_id=$run)) WHERE q.run_id=$run ORDER BY array_position(ARRAY['nulls','duplicates','invalid','consistency','completeness'], q.metric)"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Estado"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "ALERTA": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "OK": {
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Detalle"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 520
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 7
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Data Drift (doc §3.3, umbrales §5.1–5.2)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Data Drift por dimensión RFM",
+      "description": "Alerta desde cambio moderado: PSI ≥ 0.1 o KS ≥ 0.05.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT feature AS \"Dimensión\", round(psi::numeric,4) AS \"PSI\", psi_level AS \"Nivel PSI\", round(ks::numeric,4) AS \"KS\", ks_level AS \"Nivel KS\", CASE WHEN alert THEN 'ALERTA' ELSE 'OK' END AS \"Estado\" FROM data_drift WHERE run_id=$run ORDER BY array_position(ARRAY['Recency','Frequency','Monetary','Profit_30d','Avg_Odds'], feature)"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Estado"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "ALERTA": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "OK": {
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 7
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "PSI por corrida",
+      "description": "Línea naranja: alerta (0.1). Roja: cambio significativo (0.25).",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT r.ingest_date::text AS \"Corrida\", max(psi) FILTER (WHERE feature='Recency') AS \"Recency\", max(psi) FILTER (WHERE feature='Frequency') AS \"Frequency\", max(psi) FILTER (WHERE feature='Monetary') AS \"Monetary\", max(psi) FILTER (WHERE feature='Profit_30d') AS \"Profit_30d\", max(psi) FILTER (WHERE feature='Avg_Odds') AS \"Avg_Odds\" FROM data_drift d JOIN runs r USING (run_id) WHERE r.dataset='new' GROUP BY r.run_id, r.ingest_date ORDER BY r.run_id"
+        }
+      ],
+      "options": {
+        "xField": "Corrida",
+        "orientation": "vertical",
+        "showValue": "never",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "KS por corrida",
+      "description": "Línea naranja: alerta (0.05). Roja: cambio importante (0.2).",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT r.ingest_date::text AS \"Corrida\", max(ks) FILTER (WHERE feature='Recency') AS \"Recency\", max(ks) FILTER (WHERE feature='Frequency') AS \"Frequency\", max(ks) FILTER (WHERE feature='Monetary') AS \"Monetary\", max(ks) FILTER (WHERE feature='Profit_30d') AS \"Profit_30d\", max(ks) FILTER (WHERE feature='Avg_Odds') AS \"Avg_Odds\" FROM data_drift d JOIN runs r USING (run_id) WHERE r.dataset='new' GROUP BY r.run_id, r.ingest_date ORDER BY r.run_id"
+        }
+      ],
+      "options": {
+        "xField": "Corrida",
+        "orientation": "vertical",
+        "showValue": "never",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Historial",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Corridas",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "monitoring-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT r.run_id AS \"Run\", r.dataset AS \"Tipo\", r.model_version AS \"Champion\", r.ingest_date::text AS \"Ingesta\", r.snapshot_date::text AS \"Snapshot\", r.n_rows AS \"Transacciones\", r.n_users AS \"Usuarios\", (SELECT count(*) FROM data_quality q WHERE q.run_id=r.run_id AND q.alert AND r.dataset='new') AS \"Alertas DQ\", (SELECT count(*) FROM data_drift d WHERE d.run_id=r.run_id AND d.alert) AS \"Alertas drift\", to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI') || ' UTC' AS \"Ejecutada\" FROM runs r ORDER BY r.run_id DESC"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Alertas.*"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "monitoring-pg"
+      }
+    }
+  ]
+}

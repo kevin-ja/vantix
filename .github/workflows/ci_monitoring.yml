@@ -1,0 +1,110 @@
+# CI del sistema de monitorización (monitorization/doc/ci_cd.md).
+#   - En cada PR: tests del backend + fmt/validate de su Terraform (check obligatorio `monitoring-tests`).
+#     Sin filtro de rutas: un check obligatorio tiene que reportar en todos los PR.
+#   - Al mergear a main cambios en el código de la imagen: tests → build → push a ECR → puntero SSM.
+#     El puntero (/vantix-monitoring/backend-image) es lo que el servidor usa en la próxima corrida.
+# No ejecuta el monitoreo: eso es run_monitoring_manual.yml (manual).
+name: ci_monitoring
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - "monitorization/src/**"
+      - "monitorization/docker/**"
+      - "monitorization/tests/**"
+      - "pipelines/__init__.py"
+      - "pipelines/common/__init__.py"
+      - "pipelines/common/config.py"
+      - "pipelines/common/features.py"
+      - "pipelines/common/io.py"
+      - "pipelines/common/storage.py"
+      - ".github/workflows/ci_monitoring.yml"
+  workflow_dispatch:   # reconstruir a mano desde main (p. ej. si falló el push)
+
+permissions:
+  id-token: write   # OIDC con AWS (solo el job build)
+  contents: read
+
+jobs:
+  monitoring-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # mismo Python que la imagen
+          cache: pip
+          cache-dependency-path: monitorization/docker/requirements.txt
+
+      - name: Dependencias (las mismas de la imagen, con hashes)
+        run: |
+          pip install --require-hashes -r monitorization/docker/requirements.txt
+          pip install pytest==8.4.2
+
+      - name: Tests del backend
+        run: python -m pytest -q monitorization/tests
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Terraform (fmt + validate, sin backend)
+        run: |
+          terraform fmt -check -recursive monitorization/infra
+          terraform -chdir=monitorization/infra init -backend=false -input=false
+          terraform -chdir=monitorization/infra validate
+
+  build:
+    needs: monitoring-tests
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: monitoring-build   # un build a la vez; nunca se cancela uno a medias
+    env:
+      AWS_REGION: us-east-1
+      ECR_REPOSITORY: vantix-monitoring-backend
+      IMAGE_PARAM: /vantix-monitoring/backend-image
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GH_MONITORING_CI_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build + push (tag = commit)
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          tag="${GITHUB_SHA::7}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$tag" >/dev/null 2>&1; then
+            echo "La imagen $tag ya existe (tags inmutables): no se reconstruye"
+            exit 0
+          fi
+          docker buildx build --platform linux/amd64 --provenance=false --build-arg GIT_COMMIT="$tag" \
+            -f monitorization/docker/Dockerfile -t "$REGISTRY/$ECR_REPOSITORY:$tag" --push .
+
+      - name: Puntero SSM → imagen nueva
+        env:
+          TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          previous=$(aws ssm get-parameter --name "$IMAGE_PARAM" --query Parameter.Value --output text)
+          aws ssm put-parameter --name "$IMAGE_PARAM" --value "$TAG" --overwrite >/dev/null
+          {
+            echo "### Imagen del backend publicada"
+            echo "- Nueva: \`$ECR_REPOSITORY:$TAG\`"
+            echo "- Anterior: \`$previous\` (rollback: \`make set-image TAG=$previous\`)"
+            echo "- La próxima corrida de \`run_monitoring_manual\` usará la nueva."
+          } >> "$GITHUB_STEP_SUMMARY"
