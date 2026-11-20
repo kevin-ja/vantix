@@ -20,6 +20,15 @@ output "grafana_password_parameter" {
   value       = aws_ssm_parameter.grafana_password.name
 }
 
-output "image_uri" {
-  value = local.image_uri
+output "image_parameter" {
+  description = "Parámetro SSM con el tag vigente del backend (lo escribe ci_monitoring.yml)."
+  value       = aws_ssm_parameter.backend_image.name
+}
+
+output "github_ci_role_arn" {
+  value = aws_iam_role.github_ci.arn
+}
+
+output "github_run_role_arn" {
+  value = aws_iam_role.github_run.arn
 }

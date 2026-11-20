@@ -232,7 +232,7 @@ Una instancia **EC2** con **Docker Compose**, mismo patrón que el servidor de M
 - **Jobs:**
   - `run_monitoring`: corrida semanal sobre la data nueva.
   - `build_benchmark`: calcula el benchmark (métricas + `psi_bins.json`) sobre la data histórica del champion. Se corre **una vez, apenas el sistema funcione de punta a punta**, y de nuevo solo al promover un champion nuevo.
-- **Ejecución:** `docker compose run backend <job>`, disparado por el workflow manual de GitHub Actions vía SSM Run Command (etapa de CI/CD).
+- **Ejecución:** `server/monitoring.sh run <job>` en la EC2, disparado por `run_monitoring_manual.yml` vía SSM Run Command. El script toma la imagen vigente (puntero SSM que escribe `ci_monitoring.yml`), la descarga y corre el job. Detalle en [`ci_cd.md`](ci_cd.md).
 - **Librerías:** pandas, numpy, scipy (`ks_2samp` para el KS), pyarrow + boto3 (Parquet en S3), psycopg (Postgres). El PSI se implementa con numpy. **Sin scikit-learn:** el monitoreo no usa el modelo.
 - **Reutiliza solo lo compartido de `pipelines/common`** (sin copiarlo; el Dockerfile vive en `monitorization/docker/`, el contexto del build es la raíz del repo y `Dockerfile.dockerignore` deja entrar solo estos archivos):
   - `config.py`: columnas, `BetType` conocidos, `FEATURE_COLS`.
@@ -260,12 +260,14 @@ Una instancia **EC2** con **Docker Compose**, mismo patrón que el servidor de M
 ```
 monitorization/
   compose.yml           db + frontend (siempre encendidos) + backend (job)
-  Makefile              up / image / start / stop / benchmark / run / logs / down / test
+  Makefile              up / bootstrap / image / set-image / start / stop / benchmark / run / logs / down / test
+  server/monitoring.sh  deploy + ejecución en la EC2 (puntero SSM → pull → compose → job)
   infra/                Terraform (estado propio: monitorization/terraform.tfstate)
   docker/               Dockerfile, Dockerfile.dockerignore, requirements (con hashes)
   src/monitoring/       settings, quality, drift, db, jobs, __main__ (CLI), schema.sql
   grafana/              provisioning (datasource, dashboards, alertas) + dashboard JSON
   scripts/              make_synthetic_batches.py (datos de prueba, §9)
+  doc/                  monitorization_arch.md (este doc) + ci_cd.md
   tests/                tests del backend
 ```
 
@@ -301,7 +303,7 @@ monitorization/
 ### 8.8. Secretos e imagen
 
 - **Contraseñas** (Postgres, admin de Grafana, SMTP de SES) en **SSM Parameter Store**; la EC2 las lee al arrancar. GitHub Actions no guarda contraseñas: entra a AWS por OIDC.
-- **Imagen del backend** en **ECR**, con tag inmutable = commit.
+- **Imagen del backend** en **ECR**, con tag inmutable = commit. La vigente la indica el puntero SSM `/vantix-monitoring/backend-image` (lo actualiza el CI); Terraform no despliega código ([`ci_cd.md`](ci_cd.md)).
 
 ### 8.9. Sin CloudWatch
 

@@ -2,13 +2,18 @@
 #
 #   make test           tests del backend (usa el .venv de la raíz del repo)
 #   make lock           regenera docker/requirements.txt (con hashes) desde requirements.in
-#   make up             crea/actualiza todo: ECR → imagen → infra (la EC2 se reemplaza si cambia la imagen/config)
-#   make image          construye (linux/amd64) y sube la imagen del backend (tag = commit)
+#   make up             crea/actualiza la infra (Terraform). El código NO se despliega aquí: lo hace el CI
+#                       (ci_monitoring.yml → imagen en ECR + puntero SSM) y el servidor la toma en cada corrida
+#   make bootstrap      primera vez en una cuenta nueva: ECR → imagen local → infra (puntero = esa imagen)
+#   make image          construye y sube la imagen desde tu máquina (emergencias); NO mueve el puntero
+#   make current-image  tag vigente del backend (puntero SSM)
+#   make set-image TAG=<tag>   mueve el puntero (rollback a una imagen anterior de ECR)
 #   make plan           terraform plan
 #   make start | stop | status    encender / apagar / ver la EC2
 #   make url | password           URL de Grafana / contraseña de admin
 #   make benchmark INGEST_DATE=2025-04-30   job build_benchmark (una vez, y al promover un champion nuevo)
 #   make run [INGEST_DATE=…]                job run_monitoring (por defecto: última partición de raw/)
+#                       (lo habitual es lanzarlos con run_monitoring_manual.yml desde GitHub, ver doc/ci_cd.md)
 #   make logs           logs de db + frontend
 #   make down           destruye el cómputo (EC2, IP, CloudFront); conserva bucket, volumen de datos, imagen y secretos
 #
@@ -25,14 +30,15 @@ ACCOUNT_ID   = $(eval ACCOUNT_ID := $(shell $(AWS) sts get-caller-identity --que
 STATE_BUCKET = vantix-$(ACCOUNT_ID)-tfstate
 STATE_KEY    := monitorization/terraform.tfstate
 TF           := terraform -chdir=infra
-# Tag inmutable: último commit que tocó algo que entra en la imagen.
+# Tag de la imagen construida en local (make image / bootstrap): último commit que tocó algo que entra en ella.
 IMAGE_SOURCES := docker src $(addprefix $(ROOT)/pipelines/,__init__.py common/__init__.py common/config.py \
                  common/features.py common/io.py common/storage.py)
 IMAGE_TAG     = $(shell git log -1 --format=%h -- $(IMAGE_SOURCES))
-TF_VARS       = -var=name=$(NAME) -var=region=$(REGION) -var=image_tag=$(IMAGE_TAG) -var=aws_profile=$(AWS_PROFILE)
+TF_VARS       = -var=name=$(NAME) -var=region=$(REGION) -var=initial_image_tag=$(IMAGE_TAG) -var=aws_profile=$(AWS_PROFILE)
 out           = $(shell $(TF) output -raw $(1))
 
-.PHONY: help test lock check-clean init up image plan start stop status url password benchmark run logs down
+.PHONY: help test lock check-clean init up bootstrap image current-image set-image plan start stop status url \
+        password benchmark run logs down
 
 help:
 	@sed -n '3,/^[^#]/p' Makefile | grep '^#' | sed 's/^# \{0,1\}//'
@@ -56,6 +62,10 @@ init: check-clean
 		-backend-config="profile=$(AWS_PROFILE)"
 
 up: init
+	$(TF) apply -input=false $(TF_VARS)
+	@echo "Grafana: $(call out,grafana_url)  (arranca en ~3 min)."
+
+bootstrap: init
 	$(TF) apply -input=false -auto-approve $(TF_VARS) -target=aws_ecr_repository.backend
 	$(MAKE) image
 	$(TF) apply -input=false $(TF_VARS)
@@ -68,6 +78,15 @@ image:
 	$(AWS) ecr get-login-password | docker login --username AWS --password-stdin $${repo%%/*} && \
 	docker buildx build --platform linux/amd64 --provenance=false --build-arg GIT_COMMIT=$(IMAGE_TAG) \
 		-f docker/Dockerfile -t $$repo:$(IMAGE_TAG) --push $(ROOT)
+
+current-image:
+	@$(AWS) ssm get-parameter --name $(call out,image_parameter) --query Parameter.Value --output text
+
+set-image:
+	@test -n "$(TAG)" || { echo "Falta TAG (tag existente en ECR)"; exit 1; }
+	$(AWS) ecr describe-images --repository-name $(NAME)-backend --image-ids imageTag=$(TAG) >/dev/null
+	$(AWS) ssm put-parameter --name $(call out,image_parameter) --value $(TAG) --overwrite >/dev/null
+	@echo "Puntero → $(TAG) (la próxima corrida usa esa imagen)"
 
 plan: init
 	$(TF) plan -input=false $(TF_VARS)
@@ -93,7 +112,7 @@ password:
 # Ejecuta un comando en la EC2 por SSM (sin SSH) y muestra su salida.
 define ssm_run
 	@id=$$($(AWS) ssm send-command --instance-ids $(call out,instance_id) --document-name AWS-RunShellScript \
-		--parameters 'commands=["cd /opt/monitoring && aws ecr get-login-password --region $(REGION) | docker login --username AWS --password-stdin $$(grep ^BACKEND_IMAGE= .env | cut -d= -f2 | cut -d/ -f1) >/dev/null && $(1)"]' \
+		--parameters 'commands=["cd /opt/monitoring && $(1)"]' \
 		--query Command.CommandId --output text); \
 	echo "SSM $$id: $(1)"; \
 	$(AWS) ssm wait command-executed --command-id $$id --instance-id $(call out,instance_id) || true; \
@@ -103,10 +122,10 @@ endef
 
 benchmark:
 	@test "$(INGEST_DATE)" != "auto" || { echo "Falta INGEST_DATE (partición con la que se entrenó el champion)"; exit 1; }
-	$(call ssm_run,docker compose run --rm backend build_benchmark --ingest-date $(INGEST_DATE))
+	$(call ssm_run,./monitoring.sh run build_benchmark --ingest-date $(INGEST_DATE))
 
 run:
-	$(call ssm_run,docker compose run --rm backend run_monitoring --ingest-date $(INGEST_DATE))
+	$(call ssm_run,./monitoring.sh run run_monitoring --ingest-date $(INGEST_DATE))
 
 logs:
 	$(call ssm_run,docker compose logs --tail 100 db frontend)

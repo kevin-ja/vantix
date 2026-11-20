@@ -7,11 +7,10 @@
 data "aws_caller_identity" "current" {}
 
 locals {
-  account_id        = data.aws_caller_identity.current.account_id
-  bucket            = "${var.name}-${local.account_id}"
-  image_uri         = "${aws_ecr_repository.backend.repository_url}:${var.image_tag}"
-  ecr_registry_host = split("/", aws_ecr_repository.backend.repository_url)[0]
-  smtp_host         = "email-smtp.${var.region}.amazonaws.com:587"
+  account_id  = data.aws_caller_identity.current.account_id
+  bucket      = "${var.name}-${local.account_id}"
+  image_param = "/${var.name}/backend-image"
+  smtp_host   = "email-smtp.${var.region}.amazonaws.com:587"
   # Provisioning de Grafana (datasource, dashboard, alertas): se publica en S3 y la EC2 lo sincroniza al arrancar.
   grafana_dir   = "${path.module}/../grafana"
   grafana_files = fileset(local.grafana_dir, "**")
@@ -125,6 +124,19 @@ resource "aws_ecr_lifecycle_policy" "backend" {
   })
 }
 
+# Puntero a la imagen vigente del backend (doc/ci_cd.md): lo escribe el CI (ci_monitoring.yml) tras los tests,
+# el build y el push; el servidor lo lee antes de cada corrida (server/monitoring.sh). Terraform solo lo crea:
+# después el valor es del CI (rollback: `make set-image TAG=<tag anterior>`).
+resource "aws_ssm_parameter" "backend_image" {
+  name        = local.image_param
+  type        = "String"
+  value       = var.initial_image_tag
+  description = "Tag de la imagen vigente del backend en ECR (lo actualiza ci_monitoring.yml)"
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
 # ---------------------------------------------------------------------------
 # SES: verifica el correo de alertas (AWS envía un correo de confirmación). En sandbox SES solo envía a
 # direcciones verificadas: remitente y destino son el mismo correo.
@@ -229,7 +241,7 @@ data "aws_iam_policy_document" "server" {
   statement {
     sid       = "Secrets"
     actions   = ["ssm:GetParameter"]
-    resources = [for p in [aws_ssm_parameter.postgres_password, aws_ssm_parameter.grafana_password, aws_ssm_parameter.smtp_user, aws_ssm_parameter.smtp_password] : p.arn]
+    resources = [for p in [aws_ssm_parameter.postgres_password, aws_ssm_parameter.grafana_password, aws_ssm_parameter.smtp_user, aws_ssm_parameter.smtp_password, aws_ssm_parameter.backend_image] : p.arn]
   }
   statement {
     sid       = "DataBucketList"
@@ -353,8 +365,9 @@ resource "aws_instance" "server" {
     compose_b64         = filebase64("${path.module}/../compose.yml")
     compose_version     = var.compose_version
     compose_sha256      = var.compose_sha256
-    ecr_registry        = local.ecr_registry_host
-    image_uri           = local.image_uri
+    ecr_repo            = aws_ecr_repository.backend.repository_url
+    image_param         = aws_ssm_parameter.backend_image.name
+    monitoring_sh_b64   = filebase64("${path.module}/../server/monitoring.sh")
     data_volume_id      = replace(aws_ebs_volume.data.id, "-", "")
     data_bucket         = var.data_bucket
     monitoring_bucket   = aws_s3_bucket.monitoring.bucket

@@ -25,9 +25,18 @@ variable "alert_email" {
   type        = string
 }
 
-variable "image_tag" {
-  description = "Tag inmutable de la imagen del backend en ECR (commit; lo pasa el Makefile)."
+variable "initial_image_tag" {
+  description = <<-EOT
+    Tag con el que se CREA el puntero SSM de la imagen del backend (tiene que existir en ECR). Solo se usa la
+    primera vez: después el puntero lo actualiza el CI (ci_monitoring.yml) y Terraform no lo toca.
+  EOT
   type        = string
+}
+
+variable "github_repo" {
+  description = "Repo cuyos workflows asumen los roles vía OIDC, como lo envía GitHub en `sub` (IDs inmutables)."
+  type        = string
+  default     = "kevin-ja@176353864/vantix@1463070333"
 }
 
 variable "instance_type" {
