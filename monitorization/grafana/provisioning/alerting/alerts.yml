@@ -1,0 +1,88 @@
+# Alertas (doc §8.5): el backend ya marca `alert` con los umbrales de §5; Grafana solo cuenta las alertas de la
+# última corrida sobre data nueva y avisa por correo (SES). Por evento: el estado cambia solo con una corrida nueva.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: ml-engineer
+    receivers:
+      - uid: ml-engineer-email
+        type: email
+        settings:
+          addresses: $ALERT_EMAIL
+          singleEmail: true
+
+policies:
+  - orgId: 1
+    receiver: ml-engineer
+    group_by: [grafana_folder, alertname]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 168h
+
+groups:
+  - orgId: 1
+    name: monitoring
+    folder: Monitoring
+    interval: 1m
+    rules:
+      - uid: dq-alerts
+        title: Data Quality con alertas
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { area: data_quality }
+        annotations:
+          summary: "La última corrida tiene {{ $values.A.Value }} métrica(s) de Data Quality en alerta."
+          description: "Abrir el dashboard Vantix · Monitorización y revisar la tabla de Data Quality."
+        data:
+          - refId: A
+            datasourceUid: monitoring-pg
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              editorMode: code
+              rawSql: >-
+                SELECT count(*)::float AS alerts FROM data_quality
+                WHERE alert AND run_id = (SELECT max(run_id) FROM runs WHERE dataset = 'new')
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+      - uid: drift-alerts
+        title: Data Drift con alertas
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { area: data_drift }
+        annotations:
+          summary: "La última corrida tiene {{ $values.A.Value }} dimensión(es) RFM con drift (PSI ≥ 0.1 o KS ≥ 0.05)."
+          description: "Abrir el dashboard Vantix · Monitorización y revisar la tabla de Data Drift."
+        data:
+          - refId: A
+            datasourceUid: monitoring-pg
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              editorMode: code
+              rawSql: >-
+                SELECT count(*)::float AS alerts FROM data_drift
+                WHERE alert AND run_id = (SELECT max(run_id) FROM runs WHERE dataset = 'new')
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }

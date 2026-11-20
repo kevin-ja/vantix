@@ -1,0 +1,16 @@
+# Datasource de Postgres (uid fijo: lo usan el dashboard y las reglas de alerta).
+apiVersion: 1
+datasources:
+  - name: Monitoring
+    uid: monitoring-pg
+    type: grafana-postgresql-datasource
+    url: db:5432
+    user: monitoring
+    isDefault: true
+    editable: false
+    jsonData:
+      database: monitoring
+      sslmode: disable
+      postgresVersion: 1600
+    secureJsonData:
+      password: $POSTGRES_PASSWORD

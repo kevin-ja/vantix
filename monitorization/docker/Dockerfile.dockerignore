@@ -1,0 +1,11 @@
+# Lista blanca: el contexto es la raíz del repo, pero solo entra esto (no data/, .venv/, etc.).
+*
+!monitorization/docker/requirements.txt
+!monitorization/src/monitoring/*.py
+!pipelines/__init__.py
+!pipelines/common/__init__.py
+!pipelines/common/config.py
+!pipelines/common/features.py
+!pipelines/common/io.py
+!pipelines/common/storage.py
+!monitorization/src/monitoring/schema.sql
