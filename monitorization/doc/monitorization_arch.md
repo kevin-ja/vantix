@@ -99,9 +99,16 @@ Aunque la monitorización se haga sobre la data nueva, se necesita un benchmark:
 
 ### 5.3. Data Quality
 
-> **Pendiente:** definir los umbrales de las métricas de Data Quality.
+Se miden sobre las columnas que entran en el cálculo de las 5 dimensiones RFM. Si el pipeline de entrenamiento trata el caso, se tolera un rango; si no, cualquier presencia dispara una alerta.
+
+| Métrica | ¿El pipeline de entrenamiento lo trata? | Umbral |
+|---|---|---|
+| Nulos | No | > 0 → alerta |
+| Duplicados | Sí | < 0,5 % pequeño · 0,5–1 % moderado · 1–5 % considerable · > 5 % importante |
+| Valores inválidos | No | > 0 → alerta |
+| Consistencia | No | > 0 → alerta |
+| Completitud | No | > 0 → alerta |
 
 ## 6. Pendientes
 
-- [ ] Definir los umbrales de Data Quality.
 - [ ] Definir qué nivel de KS/PSI dispara la alerta de drift.
