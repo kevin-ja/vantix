@@ -32,7 +32,7 @@ Responde a: **¿qué pasa cuando un umbral es alcanzado?** Depende de dos escena
 
 ```mermaid
 flowchart TD
-    A[Datos de entrada<br/>raw data / data nueva] --> B[Sub-pipeline 1<br/>Data Quality Measurement]
+    A[Datos de entrada<br/>data nueva] --> B[Sub-pipeline 1<br/>Data Quality Measurement]
     B --> DQ[(PostgreSQL<br/>data_quality)]
     B --> C[Cálculo de las 5 dimensiones RFM<br/>reutiliza pipeline de entrenamiento]
     C --> D[Sub-pipeline 2<br/>Data Drift Measurement<br/>antes de escalar/acotar]
@@ -45,9 +45,7 @@ flowchart TD
 
 ### 3.0. Datos de entrada
 
-Idealmente entra raw data.
-
-> **Pendiente:** definir qué debe entrar: el raw data o la data nueva recabada que no ha sido usada para entrenamiento.
+Entra **data nueva**, no la data histórica (con la que el modelo ha sido entrenado). La data histórica se usa solo como benchmark (ver sección 4).
 
 ### 3.1. Sub-pipeline 1: Data Quality Measurement
 
@@ -74,9 +72,15 @@ Se ejecuta sobre las cinco dimensiones RFM **antes del preprocesamiento** (escal
 
 Los resultados se almacenan en la tabla **`data_drift`** (PostgreSQL).
 
-## 4. Umbrales (thresholds)
+## 4. Benchmark
 
-### 4.1. KS
+Aunque la monitorización se haga sobre la data nueva, se necesita un benchmark: las mismas métricas de Data Quality y Data Drift, pero calculadas sobre la data histórica (la data con la que el modelo ha sido entrenado).
+
+**Justificación:** el drift de distribución se debe medir respecto a la data o lote que el modelo aprendió. Lo que importa es si la data de hoy, o la más reciente, se sigue pareciendo o no a la data histórica con la que el modelo fue entrenado. Así trabajan los sistemas de monitoreo como SageMaker Model Monitor, Evidently AI, WhyLabs y NannyML.
+
+## 5. Umbrales (thresholds)
+
+### 5.1. KS
 
 | Rango | Clasificación |
 |---|---|
@@ -85,7 +89,7 @@ Los resultados se almacenan en la tabla **`data_drift`** (PostgreSQL).
 | 0.1 – 0.2 | Cambio considerable |
 | > 0.2 | Cambio importante |
 
-### 4.2. PSI
+### 5.2. PSI
 
 | Rango | Clasificación |
 |---|---|
@@ -93,12 +97,11 @@ Los resultados se almacenan en la tabla **`data_drift`** (PostgreSQL).
 | 0.1 – 0.25 | Cambio moderado |
 | > 0.25 | Cambio significativo |
 
-### 4.3. Data Quality
+### 5.3. Data Quality
 
 > **Pendiente:** definir los umbrales de las métricas de Data Quality.
 
-## 5. Pendientes
+## 6. Pendientes
 
-- [ ] Definir los datos de entrada del pipeline (raw data vs. data nueva no usada en entrenamiento).
 - [ ] Definir los umbrales de Data Quality.
 - [ ] Definir qué nivel de KS/PSI dispara la alerta de drift.
