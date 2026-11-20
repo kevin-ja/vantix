@@ -1,7 +1,8 @@
-"""Los dos jobs del backend (doc §8.3).
+"""Jobs del backend (doc §8.3, §8.7).
 
 build_benchmark : data histórica del champion → métricas de referencia + bins del PSI + features de referencia.
 run_monitoring  : data nueva → Data Quality + Data Drift vs. benchmark → Postgres → backup.
+restore         : al arrancar, si la base está vacía, restaura el último backup de S3 (como Litestream en MLflow).
 
 El benchmark queda atado al champion: benchmark/model_version=<v>/ en el bucket del monitoreo.
 """
@@ -152,3 +153,31 @@ def backup(backup_uri: str) -> None:
         subprocess.run(["pg_dump", "--format=custom", f"--file={dump}"], check=True)
         storage.upload_file(dump, storage.join(backup_uri, BACKUP_NAME))
     log.info("backup → %s", storage.join(backup_uri, BACKUP_NAME))
+
+
+def restore(backup_uri: str) -> bool:
+    """Restaura el último backup si la base no tiene corridas. Idempotente: corre en cada arranque de la EC2.
+
+    Base vacía = volumen EBS nuevo (se perdió o se recreó): Postgres ya creó el esquema vacío (schema.sql).
+    `--clean --if-exists` reemplaza esas tablas vacías por las del backup.
+    """
+    with db.connect() as conn:
+        n = conn.execute("SELECT count(*) FROM runs").fetchone()[0] if conn.execute(
+            "SELECT to_regclass('runs')").fetchone()[0] else 0
+    if n:
+        log.info("restore: la base ya tiene %s corridas, no se restaura", n)
+        return False
+    with tempfile.TemporaryDirectory() as t:
+        try:
+            dump = storage.download_dir(backup_uri, Path(t)) / BACKUP_NAME
+        except FileNotFoundError:
+            dump = None
+        if dump is None or not dump.exists():
+            log.info("restore: base vacía y sin backup en %s → se arranca de cero", backup_uri)
+            return False
+        subprocess.run(["pg_restore", "--clean", "--if-exists", "--no-owner", "--exit-on-error",
+                        f"--dbname={os.environ.get('PGDATABASE', '')}", str(dump)], check=True)
+    with db.connect() as conn:
+        n = conn.execute("SELECT count(*) FROM runs").fetchone()[0]
+    log.info("restore: %s corridas restauradas desde %s", n, storage.join(backup_uri, BACKUP_NAME))
+    return True

@@ -11,6 +11,6 @@ datasources:
     jsonData:
       database: monitoring
       sslmode: disable
-      postgresVersion: 1600
+      postgresVersion: 1700
     secureJsonData:
       password: $POSTGRES_PASSWORD

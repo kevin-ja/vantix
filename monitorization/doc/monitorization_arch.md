@@ -223,7 +223,8 @@ Una instancia **EC2** con **Docker Compose**, mismo patrón que el servidor de M
 | Servicio | Tecnología | Tipo | Rol |
 |---|---|---|---|
 | `backend` | Python | Job (corre y termina) | Calcula las métricas de Data Quality y Data Drift y las escribe en `db`. |
-| `db` | PostgreSQL | Siempre encendido | Tablas `data_quality` y `data_drift`. |
+| `db` | PostgreSQL 17 | Siempre encendido | Tablas `runs`, `data_quality` y `data_drift`. |
+| `restore` | Python (imagen del backend) | Al arrancar (corre y termina) | Si la base está vacía, restaura el último backup de S3. |
 | `frontend` | Grafana | Siempre encendido | Dashboard y alertas. |
 
 ### 8.3. Backend
@@ -290,6 +291,8 @@ monitorization/
 
 ### 8.7. Persistencia y backups
 
+- **Recuperable como MLflow:** el servicio `restore` del compose corre en cada arranque, antes de Grafana. Si la base no tiene corridas (volumen EBS nuevo o perdido), descarga `backups/monitoring.dump` y lo restaura (`pg_restore --clean`); si ya tiene datos, no hace nada; si no hay backup, arranca de cero. Como el backup se hace al final de cada corrida y la base solo cambia en las corridas, no se pierde ninguna.
+- **Versiones:** servidor Postgres 17, la misma versión mayor que `pg_dump`/`pg_restore` del backend (Debian trixie). Con un servidor 16, los dumps de `pg_dump` 17 no se pueden restaurar (`SET transaction_timeout`).
 - **Esquema:** `src/monitoring/schema.sql` es la única definición. Postgres lo ejecuta al inicializar un volumen vacío (así las tablas existen antes de la primera corrida y las reglas de Grafana no fallan) y el backend lo reaplica antes de escribir (`IF NOT EXISTS`).
 
 - Datos de Postgres en un **volumen EBS aparte**, que sobrevive al reemplazo de la EC2.

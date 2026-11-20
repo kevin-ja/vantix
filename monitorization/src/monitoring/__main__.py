@@ -1,4 +1,4 @@
-"""CLI del backend: python -m monitoring {build_benchmark,run_monitoring} [...]
+"""CLI del backend: python -m monitoring {build_benchmark,run_monitoring,restore} [...]
 
 Rutas por defecto desde el entorno (las escribe la EC2): DATA_BUCKET y MONITORING_BUCKET.
 Para correr en local se pasan rutas locales (--raw-uri, --champion-uri, --benchmark-uri) y --no-backup.
@@ -36,7 +36,15 @@ def main(argv=None) -> None:
     r.add_argument("--backup-uri", default=_default("MONITORING_BUCKET", "backups"))
     r.add_argument("--no-backup", action="store_true")
 
+    rs = sub.add_parser("restore", help="Al arrancar: restaura el último backup si la base está vacía")
+    rs.add_argument("--backup-uri", default=_default("MONITORING_BUCKET", "backups"))
+
     a = p.parse_args(argv)
+    if a.job == "restore":
+        if not a.backup_uri:
+            p.error("falta --backup-uri (o MONITORING_BUCKET)")
+        jobs.restore(a.backup_uri)
+        return
     missing = [k for k in ("raw_uri", "champion_uri", "benchmark_uri") if not getattr(a, k)]
     if missing:
         p.error(f"faltan rutas: {missing} (definir DATA_BUCKET/MONITORING_BUCKET o pasarlas)")

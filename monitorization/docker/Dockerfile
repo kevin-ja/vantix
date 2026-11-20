@@ -1,9 +1,10 @@
-# Imagen del backend del monitoreo (jobs build_benchmark / run_monitoring).
+# Imagen del backend del monitoreo (jobs build_benchmark / run_monitoring / restore).
 # Contexto del build = raíz del repo, para reutilizar SOLO lo compartido de pipelines/common sin copiarlo
 # al repo (ver Dockerfile.dockerignore: lista blanca de archivos). Build:
 #   docker buildx build --platform linux/amd64 -f monitorization/docker/Dockerfile .
 #
-# Debian trixie: su postgresql-client (17) puede volcar el servidor Postgres 16 (pg_dump >= servidor).
+# Debian trixie trae postgresql-client 17: la misma versión mayor que el servidor (compose.yml). Si no coinciden,
+# un dump de pg_dump 17 no se puede restaurar en un servidor 16 (SET transaction_timeout).
 FROM python:3.11-slim-trixie@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
 
 RUN apt-get update \

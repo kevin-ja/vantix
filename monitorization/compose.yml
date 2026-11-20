@@ -2,13 +2,29 @@
 #   db       : PostgreSQL, siempre encendido. Datos en el volumen EBS (/data/postgres).
 #   frontend : Grafana, siempre encendido. Dashboard + alertas por SES (SMTP), provisionados desde grafana/.
 #              Datos (usuarios, estado de alertas) en /data/grafana.
+#   restore  : en cada arranque, antes de Grafana: si la base está vacía (volumen nuevo), restaura el último
+#              backup de S3 (como Litestream en MLflow). Si ya tiene datos, no hace nada.
 #   backend  : job (perfil "job"): no arranca con `up`; se ejecuta con `docker compose run --rm backend <job>`.
 # Variables: las escribe el arranque de la EC2 (infra/user_data.sh.tftpl) en .env.
 # Credenciales de AWS: las del rol de la EC2 (IMDSv2), nunca llaves en archivos.
 
+x-backend: &backend
+  image: ${BACKEND_IMAGE:?}
+  depends_on:
+    db: { condition: service_healthy }
+  environment:
+    AWS_DEFAULT_REGION: ${AWS_REGION:?}
+    DATA_BUCKET: ${DATA_BUCKET:?}
+    MONITORING_BUCKET: ${MONITORING_BUCKET:?}
+    PGHOST: db
+    PGDATABASE: monitoring
+    PGUSER: monitoring
+    PGPASSWORD: ${POSTGRES_PASSWORD:?}
+  restart: "no"
+
 services:
   db:
-    image: postgres:16.4@sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412
+    image: postgres:17.6@sha256:00bc86618629af00d2937fdc5a5d63db3ff8450acf52f0636ec813c7f4902929   # misma versión mayor que pg_dump/pg_restore del backend (Debian trixie: 17)
     environment:
       POSTGRES_DB: monitoring
       POSTGRES_USER: monitoring
@@ -26,10 +42,14 @@ services:
       retries: 12
     restart: unless-stopped
 
+  restore:
+    <<: *backend
+    command: [restore]
+
   frontend:
     image: grafana/grafana-oss:11.2.0@sha256:408afb9726de5122b00a2576763a8a57a3c86d5b0eff5305bc994ceb3eb96c3f
     depends_on:
-      db: { condition: service_healthy }
+      restore: { condition: service_completed_successfully }   # Grafana ve los datos ya restaurados
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
@@ -58,16 +78,5 @@ services:
     restart: unless-stopped
 
   backend:
-    image: ${BACKEND_IMAGE:?}
+    <<: *backend
     profiles: [job]
-    depends_on:
-      db: { condition: service_healthy }
-    environment:
-      AWS_DEFAULT_REGION: ${AWS_REGION:?}
-      DATA_BUCKET: ${DATA_BUCKET:?}
-      MONITORING_BUCKET: ${MONITORING_BUCKET:?}
-      PGHOST: db
-      PGDATABASE: monitoring
-      PGUSER: monitoring
-      PGPASSWORD: ${POSTGRES_PASSWORD:?}
-    restart: "no"
