@@ -75,7 +75,7 @@ tests/
 
 ## AWS: inferencia
 
-Requisitos: un `@champion` exportado (`make promote`) y datos en `raw/`. MLflow puede estar apagado.
+Requisitos: un `@champion` exportado (workflow `promote_best_model_manual`) y datos en `raw/`. MLflow puede estar apagado.
 
 ```bash
 make up-inference                   # bucket de scores + rol + scheduler (apagado)
