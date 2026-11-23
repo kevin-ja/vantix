@@ -15,6 +15,32 @@ Todos los comandos se corren **desde la raíz del repo**. Perfil por defecto `va
 
 - En los ejemplos, tu usuario de GitHub es `ana` y tu repo se llama `vantix`: reemplázalos por los tuyos.
 
+### Antes de los pasos · Tus credenciales de AWS
+
+En tu máquina necesitas tres cosas activas:
+
+1. **Un perfil de AWS** llamado `vantix`, con permisos de administrador y región `us-east-1` (se crea una sola vez):
+   ```bash
+   aws configure sso --profile vantix
+   ```
+2. **La sesión iniciada** (vence cada cierto tiempo; se renueva con el mismo comando):
+   ```bash
+   aws sso login --profile vantix
+   ```
+3. **Docker encendido:** `make mlflow-server-up` construye y sube una imagen.
+
+Comprueba que AWS responde. Debe mostrar tu número de cuenta:
+
+```bash
+aws sts get-caller-identity --profile vantix --query Account --output text
+```
+
+**De dónde salen las credenciales:** viven en tu carpeta personal `~/.aws/`, nunca en el repo. El `Makefile` solo pasa
+el **nombre** del perfil (`AWS_PROFILE`, por defecto `vantix`) a Terraform, a la AWS CLI y a Python, y cada uno lo busca
+en `~/.aws/`. Si tu perfil se llama distinto, agrégalo a cada comando: `make up-training AWS_PROFILE=mi-perfil`.
+
+GitHub Actions no usa estas credenciales: entra a AWS por OIDC, con los roles que crea Terraform.
+
 ### Paso 1 · Tener tu propia copia del repo en tu GitHub
 
 **Por qué:** los comandos que lanzan cosas en AWS se niegan a correr si tu código no está subido a GitHub (así cada
