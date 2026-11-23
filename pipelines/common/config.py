@@ -1,6 +1,6 @@
 """Constantes compartidas por los pipelines de entrenamiento e inferencia."""
 
-# Columnas que debe traer el dato crudo (ver diccionario.txt).
+# Columnas que debe traer el dato crudo (ver data/diccionario.txt).
 RAW_COLUMNS = [
     "TransId", "TransDate", "UserName", "CurrencyStr", "Actual_Stake", "Odds", "BetType",
     "Betteam", "Status", "Winlost", "ActualRate", "Winlostdate", "LiveIndicator",

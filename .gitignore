@@ -11,8 +11,9 @@ __pycache__/
 mlruns/
 mlartifacts/
 
-# Data (vive en S3)
-data/
+# Data (vive en S3 / GitHub Release; make get-data). Solo el diccionario se versiona.
+data/*
+!data/diccionario.txt
 
 # Terraform
 .terraform/
