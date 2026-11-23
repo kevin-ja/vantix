@@ -6,43 +6,47 @@ por cada k + métricas → MLflow). Después, una persona elige k y **promueve**
 Antes: [README de la raíz](../../README.md) §1–§2 (herramientas, perfil de AWS, `make venv`).
 Todos los comandos se corren **desde la raíz del repo**. Perfil por defecto `vantix` (`AWS_PROFILE=…` para otro).
 
-## 0. Preparación a mano (se hace una sola vez)
+## 0. Configuración inicial (parte manual)
 
-Son 4 pasos. En los ejemplos, tu usuario de GitHub es `ana` y tu repo se llama `vantix`: reemplázalos por los tuyos.
+- Son 4 pasos. 
 
-### Paso 1 · Tener tu propia copia del repo en GitHub
+- En los ejemplos, tu usuario de GitHub es `ana` y tu repo se llama `vantix`: reemplázalos por los tuyos.
+
+### Paso 1 · Tener tu propia copia del repo en tu GitHub
 
 **Por qué:** los comandos que lanzan cosas en AWS se niegan a correr si tu código no está subido a GitHub (así cada
-modelo queda ligado a un commit que cualquiera puede ver).
+modelo entrenado registra el commit del codigo que lo esta corriendo, esto es una buena practica en MLops: trazabilidad)
 
-1. Entra a la página del repo original en GitHub y pulsa el botón **Fork** (arriba a la derecha). Se crea
+1. Entra al repo original en GitHub (https://github.com/kevin-ja/vantix) y pulsa el botón **Fork** (arriba a la derecha). Se crea
    `github.com/ana/vantix`.
 2. En tu fork, abre la pestaña **Actions** y pulsa **"I understand my workflows, go ahead and enable them"**
-   (GitHub apaga los workflows en los forks).
+   (esto es necesario porque GitHub apaga los workflows en los forks).
 3. Descarga tu fork a tu máquina y entra a la carpeta:
    ```bash
    git clone https://github.com/ana/vantix.git
    cd vantix
    ```
-   Desde ahora, **todos los comandos se corren dentro de esta carpeta**.
+   🚨 Desde ahora, **todos los comandos se corren dentro de esta directorio local tuyo**.
 
 ### Paso 2 · Autorizar tu repo para que GitHub Actions pueda entrar a AWS
 
-**Por qué:** los workflows entran a AWS sin contraseñas (OIDC): AWS solo deja pasar al repo que Terraform tenga
+**Por qué:** En este sistema, los workflows de Github Actions entran a AWS sin contraseñas (en lugar usa un protocolo OIDC, mucho más seguro y eficiente): AWS solo deja pasar al repo que Terraform tenga
 anotado. Por defecto viene anotado el repo original, así que hay que poner el tuyo **antes del primer `make up-*`**.
 
 1. Inicia sesión en GitHub desde la terminal:
    ```bash
    gh auth login
    ```
-   Responde: `GitHub.com` → `HTTPS` → `Login with a web browser`, y sigue las instrucciones del navegador.
+   Responde: `GitHub.com` → `HTTPS` → `Login with a web browser`, y sigue las instrucciones del navegador hasta que te salga un aviso de login exitoso.
 2. Pregúntale a GitHub cómo se identifica tu repo ante AWS:
    ```bash
    gh api repos/ana/vantix/actions/oidc/customization/sub --jq '.sub_claim_prefix | sub("^repo:";"")'
    ```
-   Responde una sola línea, de una de estas dos formas (las dos son válidas):
-   ```
+   Verás que responde una sola línea, de una de estas dos formas (las dos son válidas), por ejemplo:
+   ```bash
+   # pueder ser:
    ana@81234567/vantix@998877665
+   # o:
    ana/vantix
    ```
    Copia **exactamente** lo que te salió.
@@ -51,33 +55,35 @@ anotado. Por defecto viene anotado el repo original, así que hay que poner el t
    echo 'github_repo = "ana@81234567/vantix@998877665"' >> infra/shared/terraform.tfvars
    echo 'github_repo = "ana@81234567/vantix@998877665"' >> monitorization/infra/terraform.tfvars
    ```
-   Si los archivos no existen, el comando los crea. No se suben a git (están en `.gitignore`).
+   ⚠️ Si los archivos no existen, tranquilo(a) el comando los crea. Lo normal que no se hayan subido a git (están en `.gitignore`).
 4. Comprueba que quedó bien:
    ```bash
    cat infra/shared/terraform.tfvars
    ```
-   Debe mostrar: `github_repo = "ana@81234567/vantix@998877665"`.
+   Debe mostrar algo como: `github_repo = "ana@81234567/vantix@998877665"`.
 
-> ¿Te equivocaste y ya habías levantado la infraestructura? Corrige el valor en los dos archivos y vuelve a correr
+> 👀 ¿Que pasa si ya habías levantado la infraestructura con terraform? No pasa nada, Corrige el valor en los dos archivos y vuelve a correr
 > `make up-training` y `cd monitorization && make up`. Hasta entonces AWS sigue usando el valor anterior.
 
-### Paso 3 · Poner el dataset en su carpeta
+### Paso 3 · Descargar el dataset
 
-**Por qué:** el dataset no está en git (pesa ~100 MB). El paso de subida a S3 (§2) lo lee de `data/data.csv`.
+**Por qué:** el dataset no está en git. Está publicado como adjunto del GitHub Release
+[`data-v1`](https://github.com/kevin-ja/vantix/releases/tag/data-v1) del repo original (Parquet, ~20 MB, 842.163
+apuestas, 19 columnas; significado de cada una en `diccionario.txt`). Requiere haber corrido `make venv`.
 
-1. Crea la carpeta y copia el archivo (cambia la ruta de origen por donde lo tengas):
+1. Descárgalo:
    ```bash
-   mkdir -p data
-   cp ~/Downloads/data.csv data/data.csv
+   make get-data
    ```
-2. Comprueba la primera línea:
-   ```bash
-   head -1 data/data.csv
+   Crea la carpeta `data/`, descarga `data/data.parquet` con una barra de progreso y lo verifica solo
+   (`make check-data`): que el archivo llegó completo (SHA-256) y que pasa las mismas reglas que el pipeline.
+2. Si todo salió bien, termina así:
    ```
-   Debe mostrar exactamente estas 19 columnas (significado de cada una en `diccionario.txt`):
+   ✔ DATA OK: 842,163 rows · 108,315 users · 2025-03-11 → 2025-04-30
+   Next step: make upload-data INGEST_DATE=2025-04-30
    ```
-   TransId,TransDate,UserName,CurrencyStr,Actual_Stake,Odds,BetType,Betteam,Status,Winlost,ActualRate,Winlostdate,LiveIndicator,BetGameTime,MatchId,SportId,LeagueId,WebId,MaxBet
-   ```
+   Si algo falla, muestra `✘ DOWNLOAD FAILED` o `✘ DATA CHECK FAILED` con el error exacto. Vuelve a correr
+   `make get-data` (sobrescribe la descarga anterior).
 
 ### Paso 4 · Configurar GitHub (solo si vas a entrenar desde GitHub Actions)
 
@@ -108,10 +114,12 @@ Los roles de GitHub solo los asumen workflows del repo autorizado que corren en 
 ## 2. Datos a S3
 
 ```bash
-make upload-raw INGEST_DATE=2025-04-30    # data/data.csv -> Parquet -> s3://…/raw/ingest_date=2025-04-30/data.parquet
+make upload-data INGEST_DATE=2025-04-30   # verifica data/data.parquet y lo sube a s3://vantix-<cuenta>-data/raw/ingest_date=2025-04-30/
 ```
 
-La ruta es inmutable: si ya existe, falla (usar otra `INGEST_DATE`).
+Antes de subir corre `make check-data`: si el archivo no pasa, no sube nada. `INGEST_DATE` es la etiqueta del lote
+y debe ser la misma que luego se pasa a `make pipeline-run`. La ruta es inmutable: si ya existe, falla (usar otra
+`INGEST_DATE`).
 
 ## 3. Entrenar
 

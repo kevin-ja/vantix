@@ -67,7 +67,7 @@ infra/
   inference/     bucket de scores + rol de ejecución + EventBridge Scheduler (semanal, apagado por defecto)
 mlflow_server/   servidor de MLflow propio (EC2 + Docker + Litestream → S3 + CloudFront); autocontenido, ver su README
 monitorization/  monitoreo de datos (Data Quality + Data Drift → PostgreSQL → Grafana); infra y CI/CD propios
-scripts/         upload_raw.py (CSV/Parquet -> s3://…/raw/ingest_date=…/) · freeze_benchmark.py ·
+scripts/         upload_raw.py (Parquet/CSV -> s3://…/raw/ingest_date=…/) · check_data.py · freeze_benchmark.py ·
                  make_synthetic_batch.py · migrate_mlflow.py
 segment_maps/    nombres de los segmentos por champion (<snapshot_date>_k<k>.json)
 tests/
