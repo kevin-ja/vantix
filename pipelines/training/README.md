@@ -69,7 +69,7 @@ anotado. Por defecto viene anotado el repo original, así que hay que poner el t
 
 **Por qué:** el dataset no está en git. Está publicado como adjunto del GitHub Release
 [`data-v1`](https://github.com/kevin-ja/vantix/releases/tag/data-v1) del repo original (Parquet, ~20 MB, 842.163
-apuestas, 19 columnas; significado de cada una en `diccionario.txt`). Requiere haber corrido `make venv`.
+apuestas, 19 columnas; significado de cada una en `data/diccionario.txt`). Requiere haber corrido `make venv`.
 
 1. Descárgalo:
    ```bash
