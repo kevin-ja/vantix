@@ -3,8 +3,6 @@
 Todas las rutas son URIs (locales o s3://): el script descarga y sube él mismo, así controla el orden de
 escritura (scores.parquet y summary.json primero, latest.json al final).
 
-Local:      python -m pipelines.inference.steps.score --raw-uri data/raw --champion-uri .local/models/champion \
-                --output-uri .local/scores --snapshot-date 2025-04-30 --scoring-date 2025-05-01
 SageMaker:  --raw-uri s3://<datos>/raw --champion-uri s3://<datos>/models/champion --output-uri s3://<scores>/scores
 
 "auto" en fechas: ingest_date = última partición de raw/, scoring_date = hoy (UTC), snapshot_date = scoring_date - 1.

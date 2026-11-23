@@ -1,6 +1,5 @@
 """Paso 1-4 (Processing job): ingesta -> validación -> limpieza -> features.
 
-Local:      python -m pipelines.training.steps.prepare --input data/data.csv --output-dir .local/prepare ...
 SageMaker:  --input /opt/ml/processing/input/raw --output-dir /opt/ml/processing/output
 
 Salidas:

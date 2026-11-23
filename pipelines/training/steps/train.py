@@ -4,8 +4,6 @@ MLflow:
   run padre (uno por corrida): snapshot_date, window_days, git_commit, hashes de datos
   run hijo  (uno por k):       k, métricas, perfil de clusters, preprocessor.pkl y model (KMeans)
 
-Local:      python -m pipelines.training.steps.train --features-dir .local/prepare/features \
-                --metadata-dir .local/prepare/metadata --tracking-uri sqlite:///.local/mlflow.db
 SageMaker:  canales SM_CHANNEL_FEATURES / SM_CHANNEL_METADATA, MLFLOW_TRACKING_URI (URL del servidor propio) y
             MLFLOW_TRACKING_PASSWORD_PARAM (parámetro SSM con la contraseña; ver pipelines/common/mlflow_auth.py).
 """

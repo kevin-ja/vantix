@@ -1,6 +1,6 @@
-# Arquitectura del sistema de monitorización (draft)
+# Arquitectura del sistema de monitorización
 
-> **Estado:** borrador. Las secciones marcadas como **Pendiente** aún no están definidas.
+> **Estado:** implementado y desplegado en AWS (PR #11 y #12). CI/CD: [`ci_cd.md`](ci_cd.md).
 
 ## 1. Componentes
 

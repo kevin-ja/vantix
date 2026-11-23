@@ -1,6 +1,53 @@
 # VANTIX · Segmentación de clientes
 
-Arquitectura: [`docs/training_pipeline_arch.md`](docs/training_pipeline_arch.md) · [`docs/inference_pipeline_arch.md`](docs/inference_pipeline_arch.md) · Problema de negocio: [`bussines_problem.md`](bussines_problem.md)
+Segmenta a los clientes de una casa de apuestas (RFM + `Profit_30d` + `Avg_Odds`, KMeans) en AWS SageMaker, con MLflow
+propio, CI/CD en GitHub Actions y monitoreo de datos en Grafana.
+
+Problema de negocio: [`bussines_problem.md`](bussines_problem.md) · Arquitectura: [`docs/training_pipeline_arch.md`](docs/training_pipeline_arch.md)
+· [`docs/inference_pipeline_arch.md`](docs/inference_pipeline_arch.md)
+
+## Sistemas
+
+| Sistema | Carpeta | Guía |
+|---|---|---|
+| Servidor de MLflow | `mlflow_server/` | [`mlflow_server/README.md`](mlflow_server/README.md) |
+| Entrenamiento | `pipelines/training/` + `infra/shared`, `infra/training` | [`pipelines/training/README.md`](pipelines/training/README.md) |
+| Inferencia (batch semanal) | `pipelines/inference/` + `infra/inference` | sección [AWS: inferencia](#aws-inferencia) |
+| Monitorización | `monitorization/` | [`monitorization/doc/`](monitorization/doc/monitorization_arch.md) |
+
+## 1. Requisitos (una vez por máquina)
+
+| Herramienta | Versión | Para qué |
+|---|---|---|
+| AWS CLI | v2 | acceso a la cuenta |
+| Terraform | 1.15.8 | infraestructura |
+| Docker con `buildx` | — | imágenes de MLflow y del monitoreo |
+| `uv` | — | entornos de Python (`make venv`) |
+| `session-manager-plugin` | — | administrar las EC2 sin SSH |
+| `gh` (GitHub CLI) | — | variables y workflows de GitHub |
+| `make`, `git` | — | — |
+
+## 2. Cuenta de AWS
+
+1. Una cuenta de AWS con permisos de administrador. Región: **`us-east-1`** (fija en los workflows).
+2. Perfil de la CLI. El nombre por defecto es `vantix`; otro nombre se pasa con `AWS_PROFILE=<perfil>` en cada `make`.
+   ```bash
+   aws configure sso --profile vantix     # o: aws configure --profile vantix (llaves de IAM)
+   make login                             # aws sso login --profile vantix (cuando venza la sesión)
+   aws sts get-caller-identity --profile vantix   # comprobar
+   ```
+3. Entorno de Python local: `make venv` (Python 3.11 + mismas versiones que SageMaker y MLflow).
+
+Sin secretos en el repo: las contraseñas las genera Terraform y viven en SSM; los workflows entran a AWS por OIDC.
+
+## 3. Orden de levantamiento
+
+Cada sistema depende del anterior:
+
+1. **MLflow** → `make bootstrap` (bucket del estado de Terraform) + `make mlflow-server-up`
+2. **Entrenamiento** → [`pipelines/training/README.md`](pipelines/training/README.md)
+3. **Inferencia** → necesita un `@champion` promovido ([AWS: inferencia](#aws-inferencia))
+4. **Monitorización** → necesita el champion y datos en `raw/` ([`monitorization/doc/ci_cd.md`](monitorization/doc/ci_cd.md))
 
 ## Estructura
 
@@ -9,53 +56,22 @@ pipelines/
   common/        config, io, validate, features, transformers (Winsorizer),
                  storage (local/S3), champion (contrato de models/champion/), orchestration  ← training + inference
   training/
-    steps/       prepare.py (Processing job) · train.py (Training job)
+    steps/       prepare.py (Processing job) · train.py (Processing job mientras la cuota de training jobs sea 0)
     evaluation.py · promote.py · pipeline_sagemaker.py · requirements.txt
   inference/
     steps/       score.py (Processing job)
     pipeline_sagemaker.py · requirements.txt
 infra/
-  shared/        S3 de datos + MLflow administrado
+  shared/        S3 de datos + roles OIDC de GitHub + conexión al MLflow propio (URL y contraseña en SSM)
   training/      rol de ejecución del pipeline
   inference/     bucket de scores + rol de ejecución + EventBridge Scheduler (semanal, apagado por defecto)
-scripts/upload_raw.py   CSV -> Parquet -> s3://…/raw/ingest_date=…/
+mlflow_server/   servidor de MLflow propio (EC2 + Docker + Litestream → S3 + CloudFront); autocontenido, ver su README
+monitorization/  monitoreo de datos (Data Quality + Data Drift → PostgreSQL → Grafana); infra y CI/CD propios
+scripts/         upload_raw.py (CSV/Parquet -> s3://…/raw/ingest_date=…/) · freeze_benchmark.py ·
+                 make_synthetic_batch.py · migrate_mlflow.py
+segment_maps/    nombres de los segmentos por champion (<snapshot_date>_k<k>.json)
 tests/
 ```
-
-## Local (sin AWS, sin costo)
-
-```bash
-make venv          # Python 3.11 + scikit-learn 1.4.2 (misma versión que el contenedor de SageMaker)
-make test
-make lint          # ruff + terraform fmt (lo mismo corre en CI)
-make train-local K_MIN=2 K_MAX=10      # MLflow en .local/mlflow.db
-.venv/bin/mlflow ui --backend-store-uri sqlite:///.local/mlflow.db
-
-# inferencia local: promover un run hijo y puntuar data/data.csv
-make promote-local RUN_ID=<run hijo> SEGMENT_MAP=segment_maps/2025-04-30_k5.json REASON="prueba"   # -> .local/models/champion/
-make inference-local                                                 # -> .local/scores/scoring_date=2025-05-01/
-```
-
-## AWS: primera corrida (manual)
-
-> `pipeline-*` e `inference-*` solo corren con el código commiteado y pusheado (`make check-clean`): así el `git_commit` registrado existe en GitHub.
-
-Requisitos: perfil `vantix` (`make login`) y cuota de `ml.m5.xlarge` para training jobs aprobada.
-
-```bash
-make login                          # aws sso login --profile vantix
-make up-training                    # bucket de estado + shared (S3, MLflow ~20 min) + training (IAM)
-make upload-raw INGEST_DATE=2025-04-30
-make pipeline-run INGEST_DATE=2025-04-30 SNAPSHOT_DATE=2025-04-30 K_MIN=2 K_MAX=10
-```
-
-Seguimiento en SageMaker Studio → Pipelines → `vantix-training`. Después, en MLflow:
-
-1. Revisar el experimento `vantix-segmentation`: run padre por corrida, run hijo por k (métricas y `profile/`).
-2. Elegir k según los criterios de `docs/training_pipeline_arch.md` §3.8.
-3. Comparar contra el benchmark fijo `s3://…/models/benchmark/` (perfil de clusters y métricas por k).
-4. Nombrar los grupos en `segment_maps/<snapshot_date>_k<k>.json` (por PR).
-5. Promover desde GitHub (Actions → `promote_best_model_manual`, con aprobación) o en local: `make promote RUN_ID=<run hijo> SEGMENT_MAP=segment_maps/… REASON="…"` → `@champion` + exporta a `s3://…/models/champion/`. Rollback: `rollback_model_manual` o `make rollback VERSION=<n> REASON="…"`.
 
 ## AWS: inferencia
 
@@ -78,20 +94,22 @@ Desde GitHub: Actions → `batch_inference_manual` (con aprobación). Salida: `s
 | `train_pipeline_manual` | Manual: reentrenamiento (features + KMeans → MLflow) |
 | `promote_best_model_manual` · `rollback_model_manual` | Manual: cambiar `@champion` |
 | `batch_inference_manual` | Manual: puntuar con el `@champion` vigente |
+| `ci_monitoring` | Automático: tests + `terraform validate` de `monitorization/`; al mergear, imagen del backend a ECR |
+| `run_monitoring_manual` | Manual: corre el monitoreo de datos en la EC2 de monitorización (por SSM) |
 
 ## Costos
 
 | Recurso | Precio (us-east-1) | Se cobra |
 |---|---|---|
-| MLflow Tracking Server Small | USD 0,60/h | mientras está encendido → `make mlflow-stop` al terminar |
-| Training `ml.m5.xlarge` | USD 0,23/h | solo mientras corre |
-| Processing `ml.t3.xlarge` | USD 0,20/h | solo mientras corre |
+| EC2 `t3.small` de MLflow (y la de monitorización) | USD 0,0208/h | mientras está encendida → `make mlflow-stop` al terminar |
+| Elastic IP + disco EBS de cada EC2 | ~USD 5/mes por servidor | siempre, aunque la EC2 esté apagada |
+| Processing `ml.t3.xlarge` (Prepare, Train y Score) | USD 0,20/h | solo mientras corre |
 | S3 | USD 0,023/GB-mes | por lo guardado |
 
 ## Apagar
 
 ```bash
-make mlflow-stop                    # conserva experimentos y modelos; mlflow-start para volver
+make mlflow-stop                    # apaga la EC2 de MLflow; el estado vive en S3 (mlflow-start para volver)
 make down-training                  # quita el rol de training
 make down-inference                 # quita bucket de scores, rol y scheduler
 make down-all CONFIRM=yes           # borra todo, incluidos datos y modelos

@@ -1,6 +1,6 @@
 """Orquestación del pipeline de inferencia en SageMaker (capa delgada, 1 Processing job).
 
-La lógica vive en pipelines/inference/steps/score.py y corre igual en local (make inference-local).
+La lógica vive en pipelines/inference/steps/score.py.
 
     python -m pipelines.inference.pipeline_sagemaker upsert
     python -m pipelines.inference.pipeline_sagemaker run [--snapshot-date 2025-04-30 --scoring-date 2025-05-01]
