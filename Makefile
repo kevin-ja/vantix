@@ -21,9 +21,8 @@
 #   make inference-upsert  crea/actualiza el pipeline en SageMaker
 #   make inference-run     ejecuta el pipeline (fechas "auto" o SCORING_DATE, INF_SNAPSHOT, INF_INGEST)
 #   make schedule-on | schedule-off   activa/apaga la corrida semanal (up-inference la deja apagada)
-# Local
-#   make venv | test | lint | train-local
-#   make promote-local RUN_ID=… SEGMENT_MAP=… REASON="…"   | inference-local
+# Desarrollo (entorno, tests y lint; lo mismo corre en CI)
+#   make venv | test | lint
 # MLflow propio (mlflow_server/, ver mlflow_server/README.md)
 #   make mlflow-server-<target>   p. ej. mlflow-server-up | -start | -stop | -status | -smoke | -recreate-test
 # Docs
@@ -60,10 +59,10 @@ export TF_VAR_state_bucket = $(STATE_BUCKET)
 .PHONY: help login bootstrap up-shared up-training up-inference down-training down-inference \
         down-shared down-all mlflow-stop mlflow-start mlflow-status upload-raw pipeline-upsert \
         pipeline-run check-clean promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
-        venv test lint train-local promote-local inference-local docs-env diagrams
+        venv test lint docs-env diagrams
 
 help:
-	@sed -n '3,33p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,32p' Makefile | sed 's/^# \{0,1\}//'
 
 login:
 	aws sso login --profile $(AWS_PROFILE)
@@ -219,7 +218,7 @@ schedule-on:
 schedule-off:
 	$(MAKE) up-inference TF_ARGS="$(TF_ARGS) -var=schedule_enabled=false"
 
-# --- local -------------------------------------------------------------------
+# --- desarrollo --------------------------------------------------------------
 venv:
 	uv venv --python 3.11 .venv
 	uv pip install --python $(PY) -r requirements-dev.txt
@@ -230,30 +229,6 @@ test:
 lint:
 	.venv/bin/ruff check .
 	$(TF) fmt -check -recursive $(INFRA) mlflow_server/infra
-
-# Corrida completa en local (sin AWS): MLflow en .local/mlflow.db (mlflow ui --backend-store-uri sqlite:///.local/mlflow.db)
-train-local:
-	$(PY) -m pipelines.training.steps.prepare --input data/data.csv --output-dir .local/prepare \
-		--snapshot-date $(SNAPSHOT_DATE) --window-days $(WINDOW_DAYS)
-	$(PY) -m pipelines.training.steps.train --features-dir .local/prepare/features \
-		--metadata-dir .local/prepare/metadata --tracking-uri sqlite:///.local/mlflow.db \
-		--k-min $(K_MIN) --k-max $(K_MAX)
-
-# Promoción local: registra en .local/mlflow.db y exporta a .local/models/champion
-promote-local:
-	@test -n "$(RUN_ID)" -a -n "$(SEGMENT_MAP)" -a -n "$(REASON)" || { echo 'Uso: make promote-local RUN_ID=<run hijo> SEGMENT_MAP=<json> REASON="…"'; exit 1; }
-	$(PY) -m pipelines.training.promote --tracking-uri sqlite:///.local/mlflow.db \
-		--run-id $(RUN_ID) --segment-map $(SEGMENT_MAP) --reason "$(REASON)" --export-uri .local/models/champion
-
-# Inferencia local: data/data.csv como raw/ingest_date=$(INGEST_DATE)/ -> .local/scores/
-inference-local:
-	mkdir -p .local/raw/ingest_date=$(INGEST_DATE)
-	cp data/data.csv .local/raw/ingest_date=$(INGEST_DATE)/data.csv
-	$(PY) -m pipelines.inference.steps.score --raw-uri .local/raw --champion-uri .local/models/champion \
-		--output-uri .local/scores --ingest-date $(INF_INGEST) \
-		--snapshot-date $(if $(filter auto,$(INF_SNAPSHOT)),$(SNAPSHOT_DATE),$(INF_SNAPSHOT)) \
-		--scoring-date $(if $(filter auto,$(SCORING_DATE)),2025-05-01,$(SCORING_DATE)) \
-		--window-days $(WINDOW_DAYS)
 
 # --- docs: diagramas (todo local al repo: docs/.venv + Graphviz en docs/.tools) ----
 DOCS_PY  := docs/.venv/bin/python

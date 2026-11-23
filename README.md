@@ -73,21 +73,6 @@ segment_maps/    nombres de los segmentos por champion (<snapshot_date>_k<k>.jso
 tests/
 ```
 
-## Local (sin AWS, sin costo)
-
-Requiere el dataset en `data/data.csv`.
-
-```bash
-make test
-make lint          # ruff + terraform fmt (lo mismo corre en CI)
-make train-local K_MIN=2 K_MAX=10      # MLflow en .local/mlflow.db
-.venv/bin/mlflow ui --backend-store-uri sqlite:///.local/mlflow.db
-
-# inferencia local: promover un run hijo y puntuar data/data.csv
-make promote-local RUN_ID=<run hijo> SEGMENT_MAP=segment_maps/2025-04-30_k5.json REASON="prueba"   # -> .local/models/champion/
-make inference-local                                                 # -> .local/scores/scoring_date=2025-05-01/
-```
-
 ## AWS: inferencia
 
 Requisitos: un `@champion` exportado (`make promote`) y datos en `raw/`. MLflow puede estar apagado.
