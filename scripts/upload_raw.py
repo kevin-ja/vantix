@@ -1,6 +1,7 @@
-"""Convierte el CSV crudo a Parquet (tipos explícitos) y lo sube a s3://<bucket>/raw/ingest_date=<fecha>/.
+"""Lee el dato crudo (Parquet o CSV), lo escribe como Parquet (tipos explícitos) y lo sube a
+s3://<bucket>/raw/ingest_date=<fecha>/.
 
-    python scripts/upload_raw.py --csv data/data.csv --bucket <bucket> --ingest-date 2025-04-30
+    python scripts/upload_raw.py --input data/data.parquet --bucket <bucket> --ingest-date 2025-04-30
 
 La ruta es inmutable: si ya existe, falla (usa otra fecha de ingesta).
 """
@@ -21,7 +22,7 @@ from pipelines.common.io import read_raw, sha256_file  # noqa: E402
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--csv", required=True)
+    p.add_argument("--input", "--csv", dest="input", required=True, help="Parquet o CSV")
     p.add_argument("--bucket", required=True)
     p.add_argument("--ingest-date", required=True)
     a = p.parse_args()
@@ -31,7 +32,7 @@ def main() -> None:
     if s3.list_objects_v2(Bucket=a.bucket, Prefix=key).get("KeyCount", 0):
         raise SystemExit(f"s3://{a.bucket}/{key} ya existe: las rutas de raw no se sobrescriben")
 
-    df = read_raw(a.csv)
+    df = read_raw(a.input)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "data.parquet"
         df.to_parquet(path, index=False)

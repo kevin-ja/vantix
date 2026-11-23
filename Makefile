@@ -10,7 +10,9 @@
 # MLflow propio (EC2 de mlflow_server/; ~USD 0,03/h encendido, arranca en ~30 s)
 #   make mlflow-start | mlflow-stop | mlflow-status
 # Datos y pipeline de entrenamiento
-#   make upload-raw        data/data.csv -> Parquet -> s3://.../raw/ingest_date=$(INGEST_DATE)/
+#   make get-data          descarga data/data.parquet del GitHub Release (DATA_RELEASE) y lo verifica
+#   make check-data        verifica data/data.parquet (SHA-256 + validación del pipeline)
+#   make upload-data       verifica y sube data/data.parquet a s3://.../raw/ingest_date=$(INGEST_DATE)/
 #   make pipeline-upsert   crea/actualiza el pipeline en SageMaker
 #   make pipeline-run      ejecuta el pipeline (SNAPSHOT_DATE, WINDOW_DAYS, K_MIN, K_MAX)
 #   make promote RUN_ID=… SEGMENT_MAP=segment_maps/… REASON="…"   registra el run hijo como @champion y exporta
@@ -52,17 +54,17 @@ export TF_VAR_aws_profile = $(AWS_PROFILE)
 export TF_VAR_region      = $(REGION)
 
 # Se evalúa una sola vez y solo si un target lo necesita (make help no llama a AWS).
-ACCOUNT_ID   = $(eval ACCOUNT_ID := $(shell aws sts get-caller-identity --profile $(AWS_PROFILE) --query Account --output text))$(ACCOUNT_ID)
+ACCOUNT_ID   = $(eval ACCOUNT_ID := $(shell aws sts get-caller-identity --profile $(AWS_PROFILE) --query Account --output text 2>/dev/null))$(ACCOUNT_ID)
 STATE_BUCKET = vantix-$(ACCOUNT_ID)-tfstate
 export TF_VAR_state_bucket = $(STATE_BUCKET)
 
 .PHONY: help login bootstrap up-shared up-training up-inference down-training down-inference \
-        down-shared down-all mlflow-stop mlflow-start mlflow-status upload-raw pipeline-upsert \
+        down-shared down-all mlflow-stop mlflow-start mlflow-status get-data check-data upload-data pipeline-upsert \
         pipeline-run check-clean promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
         venv test lint docs-env diagrams
 
 help:
-	@sed -n '3,32p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,34p' Makefile | sed 's/^# \{0,1\}//'
 
 login:
 	aws sso login --profile $(AWS_PROFILE)
@@ -165,8 +167,27 @@ TRAINING_ENV = VANTIX_BUCKET=$(call tf_output,training,data_bucket) \
                VANTIX_MLFLOW_PASSWORD_PARAM=$(call tf_output,training,mlflow_password_param) \
                VANTIX_REGION=$(REGION)
 
-upload-raw:
-	$(PY) scripts/upload_raw.py --csv data/data.csv --bucket $(call tf_output,shared,data_bucket) \
+# Dataset público: adjunto del GitHub Release $(DATA_RELEASE) del repo original (los forks no copian releases).
+DATA_REPO    ?= kevin-ja/vantix
+DATA_RELEASE ?= data-v1
+DATA_URL      = https://github.com/$(DATA_REPO)/releases/download/$(DATA_RELEASE)
+DATA_FILE    := data/data.parquet
+
+get-data:
+	@mkdir -p data
+	@echo "Downloading dataset ($(DATA_RELEASE)) from $(DATA_URL)/"
+	@curl -fL --progress-bar -o $(DATA_FILE).part $(DATA_URL)/data.parquet || { rm -f $(DATA_FILE).part; \
+		echo "✘ DOWNLOAD FAILED: $(DATA_URL)/data.parquet (check your internet connection and DATA_REPO / DATA_RELEASE)"; exit 1; }
+	@curl -fsSL -o $(DATA_FILE).sha256 $(DATA_URL)/data.parquet.sha256 || { rm -f $(DATA_FILE).part; \
+		echo "✘ DOWNLOAD FAILED: $(DATA_URL)/data.parquet.sha256"; exit 1; }
+	@mv $(DATA_FILE).part $(DATA_FILE)
+	@$(MAKE) --no-print-directory check-data
+
+check-data:
+	@$(PY) scripts/check_data.py $(DATA_FILE)
+
+upload-data: check-data
+	$(PY) scripts/upload_raw.py --input $(DATA_FILE) --bucket $(call tf_output,shared,data_bucket) \
 		--ingest-date $(INGEST_DATE)
 
 pipeline-upsert: check-clean
