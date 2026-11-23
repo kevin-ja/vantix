@@ -3,7 +3,10 @@
 Pipeline `vantix-training` en SageMaker: **Prepare** (features RFM por usuario) → **Train** (preprocesador + KMeans
 por cada k + métricas → MLflow). Después, una persona elige k y **promueve** el run como `@champion`.
 
-Antes: [README de la raíz](../../README.md) §1–§2 (herramientas, perfil de AWS, `make venv`).
+Antes de empezar, completa estas dos secciones del README de la raíz:
+[1. Requisitos](../../README.md#1-requisitos-una-vez-por-máquina) (herramientas) y
+[2. Cuenta de AWS](../../README.md#2-cuenta-de-aws) (perfil de AWS y `make venv`).
+
 Todos los comandos se corren **desde la raíz del repo**. Perfil por defecto `vantix` (`AWS_PROFILE=…` para otro).
 
 ## 0. Configuración inicial (parte manual)
@@ -115,7 +118,9 @@ espera a que una persona la apruebe.
    ```
    La cuota de *training jobs* no hace falta: hoy el paso Train corre como Processing job.
 
-Las variables del environment se cargan en §2, porque sus valores salen de la infraestructura (§1).
+Al environment `production` todavía le faltan sus variables. Se cargan más adelante, en la sección
+[2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio),
+porque sus valores recién existen después de crear la infraestructura ([1. Infraestructura (Terraform)](#1-infraestructura-terraform)).
 
 ## 1. Infraestructura (Terraform)
 
@@ -141,7 +146,7 @@ Los roles de GitHub solo los asumen workflows del repo autorizado que corren en 
 **Por qué:** los workflows no saben cuál es tu bucket, tus roles ni tu MLflow. Se lo dices con 6 variables del
 environment `production`. No son secretos: las contraseñas siguen en AWS (SSM).
 
-1. Con la infraestructura ya levantada (§1), copia y pega todo este bloque. Solo cambia la primera línea:
+1. Con la infraestructura ya levantada ([1. Infraestructura (Terraform)](#1-infraestructura-terraform)), copia y pega todo este bloque. Solo cambia la primera línea:
    ```bash
    REPO=ana/vantix
 
@@ -175,7 +180,7 @@ make upload-data INGEST_DATE=2025-04-30   # verifica data/data.parquet y lo sube
 ```
 
 Antes de subir corre `make check-data`: si el archivo no pasa, no sube nada. `INGEST_DATE` es la etiqueta del lote:
-anótala, es la misma que pondrás en el formulario del §4. La ruta es inmutable: si ya existe, falla (usar otra
+anótala, es la misma que pondrás en el formulario de la sección [4. Entrenar](#4-entrenar-desde-github-actions). La ruta es inmutable: si ya existe, falla (usar otra
 `INGEST_DATE`).
 
 ## 4. Entrenar (desde GitHub Actions)
@@ -185,11 +190,11 @@ anótala, es la misma que pondrás en el formulario del §4. La ruta es inmutabl
 
    | Campo | Qué es | Qué poner la primera vez |
    |---|---|---|
-   | `ingest_date` | lote de `raw/` que se lee (el `INGEST_DATE` del §3) | `2025-04-30` |
+   | `ingest_date` | lote de `raw/` que se lee (el `INGEST_DATE` que usaste en [3. Datos a S3](#3-datos-a-s3)) | `2025-04-30` |
    | `snapshot_date` | día de corte de las features | `2025-04-30` |
    | `window_days` | días hacia atrás desde el corte | `30` |
    | `k_min`, `k_max` | rango de cantidad de grupos que se prueba | `2`, `10` |
-   | `keep_mlflow_on` | dejar MLflow encendido al terminar | **marcado** (lo necesitas en §5) |
+   | `keep_mlflow_on` | dejar MLflow encendido al terminar | **marcado** (lo necesitas en [5. Elegir k y promover](#5-elegir-k-y-promover-desde-github-actions)) |
 
 3. Pulsa **Run workflow**. La corrida queda en **Waiting**: ábrela → **Review deployments** → marca `production` →
    **Approve and deploy**. Sin este paso no arranca.
@@ -207,11 +212,11 @@ gh workflow run train_pipeline_manual.yml -R ana/vantix --ref main -f ingest_dat
 
 | Si ves esto… | Casi siempre es… |
 |---|---|
-| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `github_repo` mal escrito (§0, Paso 2) o no se volvió a correr `make up-training` |
-| `Could not load credentials` o un valor vacío | falta una variable (§2) o se cargó fuera del environment `production` |
-| `MLflow no respondió en …` | `MLFLOW_TRACKING_URI` no es la URL actual (§2) o el servidor no está levantado (§1) |
-| `ResourceLimitExceeded` | cuota de `ml.t3.xlarge` (§0, Paso 4) |
-| Prepare falla porque no encuentra datos | `ingest_date` no coincide con el `INGEST_DATE` del §3 |
+| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `github_repo` mal escrito ([Paso 2 · Autorizar tu repo](#paso-2--autorizar-tu-repo-para-que-github-actions-pueda-entrar-a-aws)) o no se volvió a correr `make up-training` |
+| `Could not load credentials` o un valor vacío | falta una variable ([2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio)) o se cargó fuera del environment `production` |
+| `MLflow no respondió en …` | `MLFLOW_TRACKING_URI` no es la URL actual ([2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio)) o el servidor no está levantado ([1. Infraestructura (Terraform)](#1-infraestructura-terraform)) |
+| `ResourceLimitExceeded` | cuota de `ml.t3.xlarge` ([Paso 4 · Preparar GitHub y la cuota de AWS](#paso-4--preparar-github-y-la-cuota-de-aws-obligatorio)) |
+| Prepare falla porque no encuentra datos | `ingest_date` no coincide con el `INGEST_DATE` que usaste en [3. Datos a S3](#3-datos-a-s3) |
 
 ## 5. Elegir k y promover (desde GitHub Actions)
 
@@ -230,7 +235,7 @@ gh workflow run train_pipeline_manual.yml -R ana/vantix --ref main -f ingest_dat
    | `segment_map` | el archivo del paso 3, p. ej. `segment_maps/2025-04-30_k5.json` |
    | `reason` | por qué lo eliges, p. ej. `primer champion` |
 
-5. Apruébalo igual que en el §4 (**Review deployments**). Al terminar, el modelo queda con el alias `@champion` y
+5. Apruébalo igual que en la sección [4. Entrenar](#4-entrenar-desde-github-actions) (**Review deployments**). Al terminar, el modelo queda con el alias `@champion` y
    exportado a `s3://vantix-<cuenta>-data/models/champion/`, de donde lo lee la inferencia.
 6. Apaga MLflow: `make mlflow-stop`.
 
