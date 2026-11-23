@@ -88,7 +88,7 @@ apuestas, 19 columnas; significado de cada una en `data/diccionario.txt`). Requi
    🚨 Si algo falla, muestra `✘ DOWNLOAD FAILED` o `✘ DATA CHECK FAILED` con el error exacto. Vuelve a correr
    `make get-data` (sobrescribe la descarga anterior).
 
-### Paso 4 · Preparar GitHub y la cuota de cómputo de AWS SageMaker (obligatorio)
+### Paso 4 · Preparar GitHub y la cuota de cómputo de AWS SageMaker
 
 **Por qué:** el entrenamiento **siempre se lanza desde GitHub Actions**. Los workflows corren dentro de un
 *environment* de GitHub llamado `production`: AWS solo deja entrar a los jobs de ese environment, y cada corrida
@@ -117,14 +117,17 @@ espera a que una persona la apruebe.
    aws service-quotas request-service-quota-increase --service-code sagemaker --quota-code <código> \
      --desired-value 1 --profile vantix --region us-east-1
    ```
-   La cuota de cómputo de AWS SageMaker para *Training jobs* no hace falta: hoy el paso Train corre como Processing
-   job.
+   La cuota de cómputo de AWS SageMaker para *Training jobs* no hace falta: hoy el paso Train corre como un job de tipo Processing
 
 Al environment `production` todavía le faltan sus variables. Se cargan más adelante, en la sección
 [2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio),
-porque sus valores recién existen después de crear la infraestructura ([1. Infraestructura (Terraform)](#1-infraestructura-terraform)).
+porque sus valores recién existen después de crear la infraestructura ([1. Infraestructura](#1-infraestructura-iac-infrastructure-as-code)).
 
-## 1. Infraestructura (Terraform)
+## 1. Infraestructura (IaC: Infrastructure as Code)
+
+La infraestructura no se crea a mano en la consola de AWS: está escrita como código y su aprovisionamiento se
+automatiza con **Terraform**. Estos comandos crean en tu cuenta todo lo necesario (buckets, roles, permisos y
+servidores). El primero solo crea, con la AWS CLI, el bucket donde Terraform guarda su estado:
 
 ```bash
 make bootstrap            # bucket del estado de Terraform: vantix-<cuenta>-tfstate (idempotente)
@@ -148,7 +151,7 @@ Los roles de GitHub solo los asumen workflows del repo autorizado que corren en 
 **Por qué:** los workflows no saben cuál es tu bucket, tus roles ni tu MLflow. Se lo dices con 6 variables del
 environment `production`. No son secretos: las contraseñas siguen en AWS (SSM).
 
-1. Con la infraestructura ya levantada ([1. Infraestructura (Terraform)](#1-infraestructura-terraform)), copia y pega todo este bloque. Solo cambia la primera línea:
+1. Con la infraestructura ya levantada ([1. Infraestructura](#1-infraestructura-iac-infrastructure-as-code)), copia y pega todo este bloque. Solo cambia la primera línea:
    ```bash
    REPO=ana/vantix
 
@@ -216,8 +219,8 @@ gh workflow run train_pipeline_manual.yml -R ana/vantix --ref main -f ingest_dat
 |---|---|
 | `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `github_repo` mal escrito ([Paso 2 · Autorizar tu repo](#paso-2--autorizar-tu-repo-para-que-github-actions-pueda-entrar-a-aws)) o no se volvió a correr `make up-training` |
 | `Could not load credentials` o un valor vacío | falta una variable ([2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio)) o se cargó fuera del environment `production` |
-| `MLflow no respondió en …` | `MLFLOW_TRACKING_URI` no es la URL actual ([2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio)) o el servidor no está levantado ([1. Infraestructura (Terraform)](#1-infraestructura-terraform)) |
-| `ResourceLimitExceeded` | cuota de cómputo de AWS SageMaker insuficiente para `ml.t3.xlarge` ([Paso 4 · Preparar GitHub y la cuota de cómputo de AWS SageMaker](#paso-4--preparar-github-y-la-cuota-de-cómputo-de-aws-sagemaker-obligatorio)) |
+| `MLflow no respondió en …` | `MLFLOW_TRACKING_URI` no es la URL actual ([2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio)) o el servidor no está levantado ([1. Infraestructura](#1-infraestructura-iac-infrastructure-as-code)) |
+| `ResourceLimitExceeded` | cuota de cómputo de AWS SageMaker insuficiente para `ml.t3.xlarge` ([Paso 4 · Preparar GitHub y la cuota de cómputo de AWS SageMaker](#paso-4--preparar-github-y-la-cuota-de-cómputo-de-aws-sagemaker)) |
 | Prepare falla porque no encuentra datos | `ingest_date` no coincide con el `INGEST_DATE` que usaste en [3. Datos a S3](#3-datos-a-s3) |
 
 ## 5. Elegir k y promover (desde GitHub Actions)
