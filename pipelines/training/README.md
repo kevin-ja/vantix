@@ -88,7 +88,7 @@ apuestas, 19 columnas; significado de cada una en `data/diccionario.txt`). Requi
    🚨 Si algo falla, muestra `✘ DOWNLOAD FAILED` o `✘ DATA CHECK FAILED` con el error exacto. Vuelve a correr
    `make get-data` (sobrescribe la descarga anterior).
 
-### Paso 4 · Preparar GitHub y la cuota de AWS (obligatorio)
+### Paso 4 · Preparar GitHub y la cuota de cómputo de AWS SageMaker (obligatorio)
 
 **Por qué:** el entrenamiento **siempre se lanza desde GitHub Actions**. Los workflows corren dentro de un
 *environment* de GitHub llamado `production`: AWS solo deja entrar a los jobs de ese environment, y cada corrida
@@ -105,7 +105,8 @@ espera a que una persona la apruebe.
    gh api repos/ana/vantix/environments/production --jq .name
    ```
    Debe responder `production`.
-4. Comprueba que tu cuenta de AWS puede usar la máquina que corre el entrenamiento (`ml.t3.xlarge`):
+4. Comprueba tu **cuota de cómputo de AWS SageMaker**: cuántas máquinas `ml.t3.xlarge` (las que corren el
+   entrenamiento) te deja usar AWS a la vez en *Processing jobs*:
    ```bash
    aws service-quotas list-service-quotas --service-code sagemaker --profile vantix --region us-east-1 \
      --query "Quotas[?QuotaName=='ml.t3.xlarge for processing job usage'].[QuotaCode,Value]" --output text
@@ -116,7 +117,8 @@ espera a que una persona la apruebe.
    aws service-quotas request-service-quota-increase --service-code sagemaker --quota-code <código> \
      --desired-value 1 --profile vantix --region us-east-1
    ```
-   La cuota de *training jobs* no hace falta: hoy el paso Train corre como Processing job.
+   La cuota de cómputo de AWS SageMaker para *Training jobs* no hace falta: hoy el paso Train corre como Processing
+   job.
 
 Al environment `production` todavía le faltan sus variables. Se cargan más adelante, en la sección
 [2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio),
@@ -215,7 +217,7 @@ gh workflow run train_pipeline_manual.yml -R ana/vantix --ref main -f ingest_dat
 | `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `github_repo` mal escrito ([Paso 2 · Autorizar tu repo](#paso-2--autorizar-tu-repo-para-que-github-actions-pueda-entrar-a-aws)) o no se volvió a correr `make up-training` |
 | `Could not load credentials` o un valor vacío | falta una variable ([2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio)) o se cargó fuera del environment `production` |
 | `MLflow no respondió en …` | `MLFLOW_TRACKING_URI` no es la URL actual ([2. Conectar GitHub con tu AWS](#2-conectar-github-con-tu-aws-obligatorio)) o el servidor no está levantado ([1. Infraestructura (Terraform)](#1-infraestructura-terraform)) |
-| `ResourceLimitExceeded` | cuota de `ml.t3.xlarge` ([Paso 4 · Preparar GitHub y la cuota de AWS](#paso-4--preparar-github-y-la-cuota-de-aws-obligatorio)) |
+| `ResourceLimitExceeded` | cuota de cómputo de AWS SageMaker insuficiente para `ml.t3.xlarge` ([Paso 4 · Preparar GitHub y la cuota de cómputo de AWS SageMaker](#paso-4--preparar-github-y-la-cuota-de-cómputo-de-aws-sagemaker-obligatorio)) |
 | Prepare falla porque no encuentra datos | `ingest_date` no coincide con el `INGEST_DATE` que usaste en [3. Datos a S3](#3-datos-a-s3) |
 
 ## 5. Elegir k y promover (desde GitHub Actions)
