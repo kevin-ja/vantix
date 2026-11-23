@@ -6,29 +6,85 @@ por cada k + métricas → MLflow). Después, una persona elige k y **promueve**
 Antes: [README de la raíz](../../README.md) §1–§2 (herramientas, perfil de AWS, `make venv`).
 Todos los comandos se corren **desde la raíz del repo**. Perfil por defecto `vantix` (`AWS_PROFILE=…` para otro).
 
-## 0. Lo que se hace a mano (una vez)
+## 0. Preparación a mano (se hace una sola vez)
 
-1. **Tu propio repo en GitHub** (fork o copia) y el código pusheado: los comandos de AWS solo corren con el commit
-   presente en GitHub (`make check-clean`), para que el `git_commit` registrado exista.
-2. **Autorizar tu repo para que GitHub Actions entre a AWS (OIDC).** Por defecto Terraform autoriza el repo
-   original; sin este paso, tus workflows no pueden entrar a AWS. Una vez, antes de cualquier `make up-*`:
-   1. Iniciar sesión en GitHub: `gh auth login`.
-   2. Obtener el identificador exacto con el que tu repo se presenta ante AWS:
-      ```bash
-      gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq '.sub_claim_prefix | sub("^repo:";"")'
-      ```
-      Sale algo como `owner@123/repo@456` u `owner/repo`. Copiarlo tal cual.
-   3. Guardarlo en los dos módulos que crean roles para GitHub (esos archivos no se suben a git):
-      ```bash
-      echo 'github_repo = "<valor del paso 2>"' >> infra/shared/terraform.tfvars
-      echo 'github_repo = "<valor del paso 2>"' >> monitorization/infra/terraform.tfvars
-      ```
-   4. Si se cambia después de levantar la infraestructura, volver a correr `make up-training` y
-      `cd monitorization && make up` para que se aplique.
-3. **Dataset** en `data/data.csv` (19 columnas, ver `pipelines/common/config.py` → `RAW_COLUMNS` y `diccionario.txt`).
-4. **GitHub** (solo para correr desde Actions; ver §5).
+Son 4 pasos. En los ejemplos, tu usuario de GitHub es `ana` y tu repo se llama `vantix`: reemplázalos por los tuyos.
 
-No hace falta la cuota de training jobs: mientras sea 0, Train corre como Processing job (`ml.t3.xlarge`).
+### Paso 1 · Tener tu propia copia del repo en GitHub
+
+**Por qué:** los comandos que lanzan cosas en AWS se niegan a correr si tu código no está subido a GitHub (así cada
+modelo queda ligado a un commit que cualquiera puede ver).
+
+1. Entra a la página del repo original en GitHub y pulsa el botón **Fork** (arriba a la derecha). Se crea
+   `github.com/ana/vantix`.
+2. En tu fork, abre la pestaña **Actions** y pulsa **"I understand my workflows, go ahead and enable them"**
+   (GitHub apaga los workflows en los forks).
+3. Descarga tu fork a tu máquina y entra a la carpeta:
+   ```bash
+   git clone https://github.com/ana/vantix.git
+   cd vantix
+   ```
+   Desde ahora, **todos los comandos se corren dentro de esta carpeta**.
+
+### Paso 2 · Autorizar tu repo para que GitHub Actions pueda entrar a AWS
+
+**Por qué:** los workflows entran a AWS sin contraseñas (OIDC): AWS solo deja pasar al repo que Terraform tenga
+anotado. Por defecto viene anotado el repo original, así que hay que poner el tuyo **antes del primer `make up-*`**.
+
+1. Inicia sesión en GitHub desde la terminal:
+   ```bash
+   gh auth login
+   ```
+   Responde: `GitHub.com` → `HTTPS` → `Login with a web browser`, y sigue las instrucciones del navegador.
+2. Pregúntale a GitHub cómo se identifica tu repo ante AWS:
+   ```bash
+   gh api repos/ana/vantix/actions/oidc/customization/sub --jq '.sub_claim_prefix | sub("^repo:";"")'
+   ```
+   Responde una sola línea, de una de estas dos formas (las dos son válidas):
+   ```
+   ana@81234567/vantix@998877665
+   ana/vantix
+   ```
+   Copia **exactamente** lo que te salió.
+3. Guárdalo en los dos archivos de configuración que lee Terraform (reemplaza el valor por el tuyo):
+   ```bash
+   echo 'github_repo = "ana@81234567/vantix@998877665"' >> infra/shared/terraform.tfvars
+   echo 'github_repo = "ana@81234567/vantix@998877665"' >> monitorization/infra/terraform.tfvars
+   ```
+   Si los archivos no existen, el comando los crea. No se suben a git (están en `.gitignore`).
+4. Comprueba que quedó bien:
+   ```bash
+   cat infra/shared/terraform.tfvars
+   ```
+   Debe mostrar: `github_repo = "ana@81234567/vantix@998877665"`.
+
+> ¿Te equivocaste y ya habías levantado la infraestructura? Corrige el valor en los dos archivos y vuelve a correr
+> `make up-training` y `cd monitorization && make up`. Hasta entonces AWS sigue usando el valor anterior.
+
+### Paso 3 · Poner el dataset en su carpeta
+
+**Por qué:** el dataset no está en git (pesa ~100 MB). El paso de subida a S3 (§2) lo lee de `data/data.csv`.
+
+1. Crea la carpeta y copia el archivo (cambia la ruta de origen por donde lo tengas):
+   ```bash
+   mkdir -p data
+   cp ~/Downloads/data.csv data/data.csv
+   ```
+2. Comprueba la primera línea:
+   ```bash
+   head -1 data/data.csv
+   ```
+   Debe mostrar exactamente estas 19 columnas (significado de cada una en `diccionario.txt`):
+   ```
+   TransId,TransDate,UserName,CurrencyStr,Actual_Stake,Odds,BetType,Betteam,Status,Winlost,ActualRate,Winlostdate,LiveIndicator,BetGameTime,MatchId,SportId,LeagueId,WebId,MaxBet
+   ```
+
+### Paso 4 · Configurar GitHub (solo si vas a entrenar desde GitHub Actions)
+
+Se hace después de levantar la infraestructura, porque los valores salen de ella: ver §5.
+
+> No necesitas pedir a AWS la cuota de training jobs: mientras sea 0, el paso Train corre como Processing job
+> (`ml.t3.xlarge`), que ya viene habilitado.
 
 ## 1. Infraestructura (Terraform)
 
