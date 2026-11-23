@@ -10,11 +10,21 @@ Todos los comandos se corren **desde la raíz del repo**. Perfil por defecto `va
 
 1. **Tu propio repo en GitHub** (fork o copia) y el código pusheado: los comandos de AWS solo corren con el commit
    presente en GitHub (`make check-clean`), para que el `git_commit` registrado exista.
-2. **Repo autorizado para OIDC.** Terraform trae por defecto el repo original; sin cambiarlo, los workflows no
-   entran a AWS. Antes de cualquier `make up-*`:
-   ```bash
-   export TF_VAR_github_repo=$(gh api repos/<owner>/<repo> --jq '"\(.owner.login)@\(.owner.id)/\(.name)@\(.id)"')
-   ```
+2. **Autorizar tu repo para que GitHub Actions entre a AWS (OIDC).** Por defecto Terraform autoriza el repo
+   original; sin este paso, tus workflows no pueden entrar a AWS. Una vez, antes de cualquier `make up-*`:
+   1. Iniciar sesión en GitHub: `gh auth login`.
+   2. Obtener el identificador exacto con el que tu repo se presenta ante AWS:
+      ```bash
+      gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq '.sub_claim_prefix | sub("^repo:";"")'
+      ```
+      Sale algo como `owner@123/repo@456` u `owner/repo`. Copiarlo tal cual.
+   3. Guardarlo en los dos módulos que crean roles para GitHub (esos archivos no se suben a git):
+      ```bash
+      echo 'github_repo = "<valor del paso 2>"' >> infra/shared/terraform.tfvars
+      echo 'github_repo = "<valor del paso 2>"' >> monitorization/infra/terraform.tfvars
+      ```
+   4. Si se cambia después de levantar la infraestructura, volver a correr `make up-training` y
+      `cd monitorization && make up` para que se aplique.
 3. **Dataset** en `data/data.csv` (19 columnas, ver `pipelines/common/config.py` → `RAW_COLUMNS` y `diccionario.txt`).
 4. **GitHub** (solo para correr desde Actions; ver §5).
 
