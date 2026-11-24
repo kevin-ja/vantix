@@ -17,6 +17,15 @@ Todos los comandos se corren **desde la raíz del repo**. Perfil por defecto `va
 
 ### Antes de los pasos · Tus credenciales de AWS
 
+**Qué cuenta y qué acceso usar:** este proyecto está pensado y probado para una **member account de AWS** (una cuenta
+secundaria dentro de una AWS Organization, dedicada solo a Vantix) a la que entras con **SSO** (IAM Identity Center).
+
+- **Member account:** mantiene los recursos, los costos y las cuotas de Vantix separados de tus otros proyectos.
+- **SSO:** inicias sesión en el navegador y AWS te da credenciales temporales, sin llaves fijas en tu máquina.
+
+No uses la *management account* de la organización ni el usuario root. Un IAM user con llaves fijas no está probado
+en este proyecto y no se recomienda.
+
 En tu máquina necesitas tres cosas activas:
 
 1. **Un perfil de AWS** llamado `vantix`, con permisos de administrador y región `us-east-1` (se crea una sola vez):
