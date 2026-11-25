@@ -2,7 +2,7 @@
 
 > Servidor de tracking de MLflow propio, desechable y barato, en AWS. Es la **condición cero** (semilla) de un futuro
 > repo independiente para montar servidores de MLflow de distintas capacidades (equipos chicos, medianos y grandes).
-> Esta versión cubre el caso **equipo chico** (ver §5).
+> Esta versión cubre el caso **equipo chico** (ver [5. Alcance y limitaciones](#5-alcance-y-limitaciones)).
 
 ## 1. Idea central: servidor desechable, estado en S3
 

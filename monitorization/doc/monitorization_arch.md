@@ -6,7 +6,7 @@
 
 | Componente | Tecnología | Notas |
 |---|---|---|
-| Backend | Scripts de Python (job) | Calcula métricas; sin CloudWatch (ver §8) |
+| Backend | Scripts de Python (job) | Calcula métricas; sin CloudWatch (ver [8.9. Sin CloudWatch](#89-sin-cloudwatch)) |
 | Database | PostgreSQL | Tablas `data_quality` y `data_drift` |
 | Frontend | Grafana | Dashboard + alertas (Grafana Alerting) |
 
@@ -253,7 +253,7 @@ Una instancia **EC2** con **Docker Compose**, mismo patrón que el servidor de M
 | `data_quality` | corrida × métrica | `value`, `unit`, `level`, `alert`, `details` (JSON: conteos por columna/regla, días faltantes) |
 | `data_drift` | corrida × dimensión | `psi`, `psi_level`, `ks`, `ks_pvalue`, `ks_level`, `alert` |
 
-`alert` lo calcula el backend con los umbrales de §5: Grafana solo lee esa columna (filtrando `dataset = 'new'`), así los umbrales viven en un único lugar (`src/monitoring/settings.py`).
+`alert` lo calcula el backend con los umbrales de la sección [5. Umbrales](#5-umbrales-thresholds): Grafana solo lee esa columna (filtrando `dataset = 'new'`), así los umbrales viven en un único lugar (`src/monitoring/settings.py`).
 
 #### Estructura
 
@@ -266,7 +266,7 @@ monitorization/
   docker/               Dockerfile, Dockerfile.dockerignore, requirements (con hashes)
   src/monitoring/       settings, quality, drift, db, jobs, __main__ (CLI), schema.sql
   grafana/              provisioning (datasource, dashboards, alertas) + dashboard JSON
-  scripts/              make_synthetic_batches.py (datos de prueba, §9)
+  scripts/              make_synthetic_batches.py (datos de prueba: ver la sección «9. Datos de prueba (sintéticos)»)
   doc/                  monitorization_arch.md (este doc) + ci_cd.md
   tests/                tests del backend
 ```
@@ -279,7 +279,7 @@ monitorization/
 
 ### 8.5. Alertas
 
-**Grafana Alerting** lee de Postgres la columna `alert` de la última corrida sobre data nueva (los umbrales de §5 los aplica el backend) y envía el correo por **Amazon SES** (SMTP). Destino: el correo del ML engineer (verificado en SES). El backend no tiene lógica de envío.
+**Grafana Alerting** lee de Postgres la columna `alert` de la última corrida sobre data nueva (los umbrales de la sección [5. Umbrales](#5-umbrales-thresholds) los aplica el backend) y envía el correo por **Amazon SES** (SMTP). Destino: el correo del ML engineer (verificado en SES). El backend no tiene lógica de envío.
 
 - **Reglas:** "Data Quality con alertas" y "Data Drift con alertas" (alerta si la última corrida tiene ≥ 1). Por evento: el estado cambia solo con una corrida nueva; el correo se repite como máximo cada 7 días.
 - **Como código:** datasource, dashboard (`Vantix · Monitorización`), reglas y contact point viven en `grafana/` y se provisionan al arrancar (Terraform los publica en S3 y la EC2 los sincroniza; un cambio reemplaza la EC2).

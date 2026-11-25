@@ -56,7 +56,7 @@ pipelines/
   common/        config, io, validate, features, transformers (Winsorizer),
                  storage (local/S3), champion (contrato de models/champion/), orchestration  ← training + inference
   training/
-    steps/       prepare.py (Processing job) · train.py (Processing job mientras la cuota de training jobs sea 0)
+    steps/       prepare.py (Processing job) · train.py (Processing job mientras la cuota de cómputo de AWS SageMaker para Training jobs sea 0)
     evaluation.py · promote.py · pipeline_sagemaker.py · requirements.txt
   inference/
     steps/       score.py (Processing job)
@@ -75,7 +75,7 @@ tests/
 
 ## AWS: inferencia
 
-Requisitos: un `@champion` exportado (`make promote`) y datos en `raw/`. MLflow puede estar apagado.
+Requisitos: un `@champion` exportado (workflow `promote_best_model_manual`) y datos en `raw/`. MLflow puede estar apagado.
 
 ```bash
 make up-inference                   # bucket de scores + rol + scheduler (apagado)
