@@ -21,6 +21,9 @@ COMMON="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$COMMON/github.sh"
 . "$COMMON/server.sh"
 
+have() { command -v "$1" >/dev/null 2>&1; }
+sha256_of() { if have shasum; then shasum -a 256 "$1"; else sha256sum "$1"; fi | awk '{print $1}'; }
+
 TODO=()
 todo() { TODO+=("$1"); err "$1"; }
 

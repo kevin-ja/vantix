@@ -1,6 +1,6 @@
 # Plan: setup global automatizado
 
-Estado: **fase 1 hecha** (`setup/common/`, `.env` y `run.sh`, sin pasos todavía). Sigue la fase 2.
+Estado: **fases 1 y 2 hechas** (`setup/common/`, `.env`, `run.sh` y `train-*`). Sigue la fase 3.
 
 ## 1. Objetivo y regla principal
 

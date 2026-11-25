@@ -28,6 +28,7 @@ show_log() { tail -n 25 "$LOG" | sed 's/^/    /' >&2; }
 
 cleanup() {
   if [ -n "$SPIN_PID" ]; then kill "$SPIN_PID" 2>/dev/null; fi
+  if declare -F step_cleanup >/dev/null; then step_cleanup; fi   # lo propio del paso
   if [ -n "$WORK" ]; then rm -rf "$WORK"; fi
 }
 

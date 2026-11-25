@@ -2,6 +2,9 @@
 
 TERRAFORM_VERSION="1.15.8"   # exacta: la exige mlflow_server/infra/versions.tf
 
+# Las mismas variables para todos los módulos que las usan.
+export TF_VAR_aws_profile="$PROFILE" TF_VAR_region="$REGION" TF_VAR_state_bucket="$STATE_BUCKET"
+
 check_terraform() {
   local version
   command -v terraform >/dev/null 2>&1 || die "Falta Terraform: corre primero make train-up."
@@ -76,6 +79,60 @@ tf_lines() {
 tf_apply() {
   live tf_lines tf "$1" apply -input=false -no-color "$WORK/plan" \
     || { show_log; die "Terraform falló en $1 (ver el error arriba)."; }
+}
+
+# AWS admite un solo proveedor OIDC de GitHub por cuenta. Si ya hay uno ajeno a este proyecto, Terraform fallaría a medias.
+check_oidc_conflict() {
+  local arn="arn:aws:iam::$ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+  grep 'aws_iam_openid_connect_provider.github will be created' "$WORK/plan.txt" >/dev/null || return 0
+  if spin "Buscando otro proveedor OIDC de GitHub" aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$arn"; then
+    err "La cuenta ya tiene un proveedor OIDC de GitHub que no creó este proyecto: $arn"
+    die "Usa una cuenta dedicada a Vantix. No se aplicó este módulo."
+  fi
+  grep 'NoSuchEntity' "$LOG" >/dev/null || { show_log; die "No se pudo comprobar el proveedor OIDC."; }
+}
+
+# tf_review <módulo> <clave del estado> [opciones] -> 0 al día, 1 hay cambios (los anota con todo)
+tf_review() {
+  local dir="$1" key="$2"
+  shift 2
+  tf_init "$dir" "$key"
+  if tf_plan "$dir" "$@"; then ok "$dir: al día"; return 0; fi
+  todo "$dir: hay cambios por aplicar"
+  return 1
+}
+
+# tf_up <módulo> <clave del estado> [opciones]: muestra los cambios y los aplica (ver approve_plan)
+tf_up() {
+  local dir="$1" key="$2"
+  shift 2
+  tf_init "$dir" "$key"
+  if tf_plan "$dir" "$@"; then return 0; fi
+  info "Cambios en $dir:"
+  show_plan "$dir"
+  check_oidc_conflict
+  approve_plan "$dir"
+  tf_apply "$dir"
+}
+
+# tfvars_set <archivo> <variable> <valor>: deja una sola línea con ese valor y conserva el resto. Guarda copia.
+tfvars_set() {
+  local file="$1" key="$2" value="$3" dir part
+  dir="$(dirname "$file")"
+  # Los nombres terminan en .tfvars para que .gitignore los excluya; Terraform solo carga terraform.tfvars.
+  part="$dir/nuevo.$$.tfvars"
+  if [ -f "$file" ]; then
+    cp -p "$file" "$dir/anterior.$(date +%Y%m%d%H%M%S).tfvars" && cp -p "$file" "$part" || return 1
+  else
+    ( umask 077 && : > "$part" ) || return 1
+  fi
+  awk -v key="$key" -v line="$key = \"$value\"" '
+    { text = $0; sub(/^[ \t]+/, "", text) }
+    index(text, key) == 1 && substr(text, length(key) + 1) ~ /^[ \t]*=/ { if (!done) print line; done = 1; next }
+    { print }
+    END { if (!done) print line }' "$([ -f "$file" ] && printf '%s' "$file" || printf /dev/null)" > "$part" \
+    || { rm -f "$part"; return 1; }
+  mv "$part" "$file"
 }
 
 # tfvars_values <archivo> <variable> -> sus valores, uno por línea

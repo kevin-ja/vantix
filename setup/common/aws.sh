@@ -9,14 +9,15 @@ use_profile() {
   export AWS_PROFILE="$PROFILE" AWS_PAGER=""
 }
 
+profile_exists() { env -u AWS_PROFILE aws configure list-profiles 2>/dev/null | grep -xF -- "$PROFILE" >/dev/null; }
+
 whoami_aws() { aws sts get-caller-identity --profile "$PROFILE" --query Account --output text; }
 
 # Se detiene si la cuenta de la sesión no es la de .env. Si la sesión venció, informa y abre el navegador.
 check_aws() {
   local account
   command -v aws >/dev/null 2>&1 || die "Falta AWS CLI: corre primero make train-up."
-  env -u AWS_PROFILE aws configure list-profiles 2>/dev/null | grep -xF -- "$PROFILE" >/dev/null \
-    || die "No existe el perfil de AWS '$PROFILE': corre primero make train-up."
+  profile_exists || die "No existe el perfil de AWS '$PROFILE': corre primero make train-up."
   if ! spin "Comprobando la sesión de AWS" whoami_aws; then
     if [ "$SETUP_MODE" = "check" ]; then die "Sesión de AWS: vencida o sin iniciar. Iníciala con: aws sso login --profile $PROFILE"; fi
     info "La sesión de AWS venció: se abre el navegador para iniciarla."

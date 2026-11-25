@@ -8,7 +8,6 @@
 # Los datos salen de .env (ver .env.example). Ninguno es una credencial. El plan está en planning-setup.md.
 # Compatible con bash 3.2, el que trae macOS (por eso sin `set -u`).
 set -o pipefail
-umask 077
 
 export ROOT SETUP_MODE SETUP_LOG
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)" || exit 1
@@ -57,7 +56,7 @@ done
 
 mkdir -p "$ROOT/setup/logs" || die "No se pudo crear setup/logs."
 SETUP_LOG="$ROOT/setup/logs/$MAKE_NAME-$SETUP_MODE-$(date +%Y%m%d-%H%M%S).log"
-: > "$SETUP_LOG" || die "No se pudo crear el registro."
+( umask 077 && : > "$SETUP_LOG" ) || die "No se pudo crear el registro."
 
 # --- informe --------------------------------------------------------------------
 title "$NAME · cuenta $ACCOUNT_ID · repo ${GITHUB_REPO:--}"

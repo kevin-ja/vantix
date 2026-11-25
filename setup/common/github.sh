@@ -4,6 +4,9 @@ ENVIRONMENT="production"     # fijo: lo exigen los workflows y los roles de AWS
 REPO="$GITHUB_REPO"
 USER_LOGIN=""; USER_ID=""
 
+unset GH_PROMPT_DISABLED     # gh debe poder preguntar durante el inicio de sesión
+export GH_PAGER="cat"
+
 github() { gh api --hostname github.com "$@"; }
 
 stop_if_offline() {
