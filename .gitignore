@@ -26,6 +26,8 @@ crash.log
 # Secretos y credenciales
 .env
 .env.*
+!.env.example
+setup/logs/
 *.pem
 *.key
 *.p12
