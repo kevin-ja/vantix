@@ -1,6 +1,6 @@
 # Plan: setup global automatizado
 
-Estado: **fases 1 y 2 hechas** (`setup/common/`, `.env`, `run.sh` y `train-*`). Sigue la fase 3.
+Estado: **fases 1 a 3 hechas** (`setup/common/`, `.env`, `run.sh`, `train-*` e `inference-*`). Sigue la fase 4.
 
 ## 1. Objetivo y regla principal
 
@@ -63,7 +63,7 @@ setup/
     server.sh         imagen en ECR, encender, apagar y espera de /health (MLflow y monitoreo)
     step.sh           lo que carga cada paso: revisar → configurar → comprobar
   training/           01_tools … 11_github_vars
-  inference/          01_check … 03_github_vars, 06_schedule
+  inference/          01_check … 03_github_vars, 06_schedule_on
   monitoring/         01_check … 04_github_vars, 06_sample_batch
   <sistema>/system.sh variables obligatorias, orden de los pasos, costo y siguiente acción
   logs/               detalle de cada ejecución (no se sube)
@@ -76,7 +76,7 @@ setup/
 | `training/03_python` | training 3 | `inference/01_check` | inference 1 |
 | `training/04_github_repo` | training 4 | `inference/02_infra` | inference 2 |
 | `training/05_dataset` | training 5 | `inference/03_github_vars` | inference 3 |
-| `training/06_environment_quota` | training 6 | `inference/06_schedule` | inference 6 |
+| `training/06_environment_quota` | training 6 | `inference/06_schedule_on` y `down` | inference 6 |
 | `training/07_state_bucket` | training 7 | `monitoring/01_check` | monitoring 1 |
 | `training/08_mlflow` | training 8 | `monitoring/02_config` | monitoring 2 |
 | `training/09_infra` | training 9 | `monitoring/03_infra` | monitoring 3 |

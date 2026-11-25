@@ -47,7 +47,9 @@ case "$1 $2" in
       *sha256*) cat "$S/lot" ;;
       *) [ -f "$S/lot" ] || missing 404; echo 16 ;;
     esac ;;
-  "s3api list-objects-v2") [ -f "$S/lot" ] && echo "raw/ingest_date=2025-04-30/data.parquet" || echo None ;;
+  "s3api list-objects-v2")
+    case "$*" in *models/champion/*) tr '\n' '\t' < "$S/champion" 2>/dev/null || echo None; exit ;; esac
+    [ -f "$S/lot" ] && echo "raw/ingest_date=2025-04-30/data.parquet" || echo None ;;
   "ecr describe-images") [ -f "$S/image" ] || missing ImageNotFoundException ;;
   "ecr get-login-password") echo clave-ecr ;;
   "ec2 describe-instances")
@@ -57,7 +59,13 @@ case "$1 $2" in
   "ec2 wait") ;;
   "iam get-open-id-connect-provider") [ -f "$S/oidc" ] || missing NoSuchEntity ;;
   "iam get-role") echo '{"sub": "repo:ana/vantix:environment:production"}' ;;
-  "sagemaker list-pipeline-executions") cat "$S/training" 2>/dev/null; true ;;
+  "s3 cp") printf '{\n  "model_version": "3",\n  "k": 5\n}\n' > "${!#}" ;;
+  "scheduler get-schedule") [ -f "$S/schedule" ] || missing ResourceNotFoundException; cat "$S/schedule" ;;
+  "sagemaker list-pipeline-executions")
+    case "$*" in
+      *vantix-inference*) [ -f "$S/inference" ] || missing ResourceNotFound; cat "$S/inference" ;;
+      *) cat "$S/training" 2>/dev/null; true ;;
+    esac ;;
   *) echo "aws sin simular: $*" >&2; exit 99 ;;
 esac
 """,
@@ -67,7 +75,15 @@ echo "terraform $*" >> "$CALLS"
 module="$(printf '%s' "${1#-chdir=$ROOT/}" | tr / .)"
 case "$2" in
   init) ;;
-  plan) [ -f "$S/applied.$module" ] && exit 0; exit 2 ;;
+  plan)
+    rm -f "$S/wanted"
+    case "$*" in
+      *schedule_enabled=true*) echo ENABLED > "$S/wanted" ;;
+      *schedule_enabled=false*) echo DISABLED > "$S/wanted" ;;
+    esac
+    [ -f "$S/applied.$module" ] || exit 2
+    [ ! -f "$S/wanted" ] || cmp -s "$S/wanted" "$S/schedule" || exit 2
+    exit 0 ;;
   show)
     cat "$S/plan" 2>/dev/null && exit
     echo "  # aws_iam_openid_connect_provider.github will be created"
@@ -78,6 +94,7 @@ case "$2" in
       touch "$S/applied.$module"
       case "$module" in
         mlflow_server.infra) [ -f "$S/image" ] || exit 1; echo running > "$S/ec2" ;;
+        infra.inference) cp "$S/wanted" "$S/schedule"; touch "$S/bucket.vantix-$ACCOUNT_ID-scores" ;;
         infra.shared) touch "$S/bucket.vantix-$ACCOUNT_ID-data" ;;
       esac ;;
     esac
@@ -89,6 +106,7 @@ case "$2" in
       tracking_uri|mlflow_tracking_uri) echo https://mlflow.example.com ;;
       instance_id) echo i-1 ;;
       data_bucket) echo "vantix-$ACCOUNT_ID-data" ;;
+      scores_bucket) echo "vantix-$ACCOUNT_ID-scores" ;;
       mlflow_password_param) echo /vantix-mlflow/admin-password ;;
       *role_arn) echo "arn:aws:iam::$ACCOUNT_ID:role/$4" ;;
     esac ;;
@@ -112,6 +130,7 @@ case "$*" in
   "api"*customization/sub*use_default*) printf 'true\tfalse\t-\n' ;;
   "api"*customization/sub*) echo - ;;
   "api"*repos/ana/vantix*) printf 'ana/vantix\ttrue\n' ;;
+  "variable list"*DATA_BUCKET*) awk -F '\t' '$1 == "DATA_BUCKET" { print $2 }' "$S/variables" ;;
   "variable list"*) cat "$S/variables" 2>/dev/null; true ;;
   "variable set"*) while [ $# -gt 0 ]; do case "$1" in set) name="$2" ;; --body) body="$2" ;; esac; shift; done
                    printf '%s\t%s\n' "$name" "$body" >> "$S/variables" ;;
@@ -178,7 +197,8 @@ class Cloud(Sandbox):
         self.state.mkdir()
         for name, body in CLOUD.items():
             self.command(name, body)
-        for path in ("mlflow_server/docker", "infra/shared", "infra/training", "monitorization/infra", "scripts"):
+        folders = ("mlflow_server/docker", "infra/shared", "infra/training", "infra/inference", "monitorization/infra")
+        for path in (*folders, "scripts"):
             (self.root / path).mkdir(parents=True)
         (self.root / "mlflow_server/docker/Dockerfile").write_text("FROM x\n")
         (self.root / "requirements-dev.txt").write_text("boto3\n")
