@@ -1,6 +1,6 @@
 # Plan: setup global automatizado
 
-Estado: **propuesta, sin implementar**.
+Estado: **fase 1 hecha** (`setup/common/`, `.env` y `run.sh`, sin pasos todavía). Sigue la fase 2.
 
 ## 1. Objetivo y regla principal
 
@@ -60,10 +60,12 @@ setup/
     aws.sh            sesión, cuenta, bucket del estado, champion, lotes
     github.sh         sesión, repo, environment, variables
     terraform.sh      init, plan, show, apply, tfvars
-    server.sh         imagen en ECR y espera de /health (MLflow y monitoreo)
+    server.sh         imagen en ECR, encender, apagar y espera de /health (MLflow y monitoreo)
+    step.sh           lo que carga cada paso: revisar → configurar → comprobar
   training/           01_tools … 11_github_vars
   inference/          01_check … 03_github_vars, 06_schedule
   monitoring/         01_check … 04_github_vars, 06_sample_batch
+  <sistema>/system.sh variables obligatorias, orden de los pasos, costo y siguiente acción
   logs/               detalle de cada ejecución (no se sube)
 ```
 
@@ -110,7 +112,6 @@ Es lo **primero** que hace cualquier `up`, antes de tocar tu máquina, AWS o Git
 - Si contiene llaves o tokens (`AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`…), se detiene y explica por qué.
 - Se lee con una lista de claves permitidas; **no se ejecuta** con `source`.
 - Si la cuenta de la sesión no es `ACCOUNT_ID`, se detiene.
-- `.gitignore` excluye `.env.*`: hay que agregar `!.env.example`.
 
 ## 6. Flujo de `up` y confirmaciones
 
