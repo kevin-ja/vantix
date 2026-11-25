@@ -4,7 +4,9 @@
 #   make train-up          levanta entrenamiento desde cero: herramientas, sesiones, MLflow, infra, datos y GitHub
 #   make train-check       solo lee: qué está listo y qué falta
 #   make train-down        apaga la EC2 de MLflow; no borra nada
-#   Inferencia y monitorización: por ahora, con pipelines/inference/setup y monitorization/setup
+#   make inference-up      levanta inferencia (exige un @champion): bucket de scores, roles, scheduler apagado y GitHub
+#   make inference-check   solo lee · make inference-down   apaga la corrida semanal; no borra nada
+#   Monitorización: por ahora, con monitorization/setup
 #   make bootstrap         bucket del estado de Terraform (train-up ya lo hace)
 # MLflow propio (EC2 de mlflow_server/; ~USD 0,03/h encendido, arranca en ~30 s)
 #   make mlflow-start | mlflow-stop | mlflow-status
@@ -21,7 +23,7 @@
 # Pipeline de inferencia
 #   make inference-upsert  crea/actualiza el pipeline en SageMaker
 #   make inference-run     ejecuta el pipeline (fechas "auto" o SCORING_DATE, INF_SNAPSHOT, INF_INGEST)
-#   make schedule-on | schedule-off   activa/apaga la corrida semanal (paso6.sh de inferencia; pregunta antes)
+#   make schedule-on | schedule-off   activa (pregunta antes) / apaga la corrida semanal
 # Desarrollo (entorno, tests y lint; lo mismo corre en CI)
 #   make venv | test | lint
 # MLflow propio (mlflow_server/, ver mlflow_server/README.md)
@@ -50,12 +52,12 @@ export AWS_PROFILE
 ACCOUNT_ID   = $(eval ACCOUNT_ID := $(shell aws sts get-caller-identity --profile $(AWS_PROFILE) --query Account --output text 2>/dev/null))$(ACCOUNT_ID)
 STATE_BUCKET = vantix-$(ACCOUNT_ID)-tfstate
 
-.PHONY: help train-up train-check train-down login bootstrap mlflow-stop mlflow-start mlflow-status get-data check-data upload-data pipeline-upsert \
+.PHONY: help train-up train-check train-down inference-up inference-check inference-down login bootstrap mlflow-stop mlflow-start mlflow-status get-data check-data upload-data pipeline-upsert \
         pipeline-run check-clean promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
         venv test lint docs-env diagrams
 
 help:
-	@sed -n '3,30p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,32p' Makefile | sed 's/^# \{0,1\}//'
 
 login:
 	aws sso login --profile $(AWS_PROFILE)
@@ -69,6 +71,15 @@ train-check:
 
 train-down:
 	@bash setup/run.sh down training
+
+inference-up:
+	@bash setup/run.sh up inference
+
+inference-check:
+	@bash setup/run.sh check inference
+
+inference-down:
+	@bash setup/run.sh down inference
 
 # --- helpers -----------------------------------------------------------------
 tf_output = $(shell $(TF) -chdir=$(INFRA)/$(1) output -raw $(2))
@@ -186,10 +197,10 @@ inference-run: check-clean
 		--window-days $(WINDOW_DAYS)
 
 schedule-on:
-	bash pipelines/inference/setup/paso6.sh --estado=on --profile=$(AWS_PROFILE)
+	@bash setup/run.sh only inference 06_schedule_on
 
 schedule-off:
-	bash pipelines/inference/setup/paso6.sh --estado=off --profile=$(AWS_PROFILE)
+	@bash setup/run.sh down inference
 
 # --- desarrollo --------------------------------------------------------------
 venv:

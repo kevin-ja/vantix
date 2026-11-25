@@ -81,6 +81,20 @@ tf_apply() {
     || { show_log; die "Terraform falló en $1 (ver el error arriba)."; }
 }
 
+# infra/shared lee el estado de MLflow: sin él, Terraform fallaría con un error difícil de entender.
+check_mlflow_state() {
+  spin "Buscando MLflow" aws s3api head-object --bucket "$STATE_BUCKET" --key mlflow-server/terraform.tfstate \
+    || { show_log; die "MLflow no está levantado: corre primero make train-up."; }
+  ok "MLflow: levantado"
+}
+
+check_github_repo() {
+  local value
+  value="$(tfvars_values "$ROOT/infra/shared/terraform.tfvars" github_repo)"
+  [ -n "$value" ] || die "Falta autorizar tu repo (github_repo en infra/shared/terraform.tfvars): corre primero make train-up."
+  ok "Repo autorizado: $value"
+}
+
 # AWS admite un solo proveedor OIDC de GitHub por cuenta. Si ya hay uno ajeno a este proyecto, Terraform fallaría a medias.
 check_oidc_conflict() {
   local arn="arn:aws:iam::$ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"

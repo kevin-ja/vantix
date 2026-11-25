@@ -88,9 +88,9 @@ class Sandbox:
                 "CALLS": str(self.calls_file), "HEALTH_INTERVAL": "0"}  # fmt: skip
         return {**base, **env}
 
-    def run(self, action="check", system="training", answers=None, **env):
+    def run(self, action="check", system="training", answers=None, extra=(), **env):
         """Sin answers corre sin terminal; con answers, en una terminal simulada que responde eso."""
-        args = ["/bin/bash", str(self.root / "setup" / "run.sh"), action, system]
+        args = ["/bin/bash", str(self.root / "setup" / "run.sh"), action, system, *extra]
         if answers is None:
             done = subprocess.run(args, env=self.environ(**env), stdin=subprocess.DEVNULL, capture_output=True,
                                   text=True, timeout=60)  # fmt: skip

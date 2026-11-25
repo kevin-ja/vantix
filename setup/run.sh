@@ -3,7 +3,8 @@
 #
 #   bash setup/run.sh up    training|inference|monitoring     levanta lo que falte, en orden
 #   bash setup/run.sh check training|inference|monitoring     solo lee: qué está listo y qué falta
-#   bash setup/run.sh down  training|inference|monitoring     apaga lo que cobra; no borra nada
+#   bash setup/run.sh down  training|inference|monitoring     apaga lo que cobra o corre solo; no borra nada
+#   bash setup/run.sh only  <sistema> <paso>                  un paso opcional, p. ej. inference 06_schedule_on
 #
 # Los datos salen de .env (ver .env.example). Ninguno es una credencial. El plan está en planning-setup.md.
 # Compatible con bash 3.2, el que trae macOS (por eso sin `set -u`).
@@ -12,7 +13,7 @@ set -o pipefail
 export ROOT SETUP_MODE SETUP_LOG
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)" || exit 1
 SETUP_MODE="$1"; SETUP_LOG=""
-SYSTEM="$2"
+SYSTEM="$2"; ONLY="$3"
 . "$ROOT/setup/common/ui.sh"
 . "$ROOT/setup/common/env.sh"
 
@@ -21,13 +22,18 @@ usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' 
 step_title() { sed -n 's/^# Paso: //p' "$1" | head -n 1; }
 
 # --- inicio ---------------------------------------------------------------------
-case "$SETUP_MODE" in up|check|down) ;; *) usage; exit 2 ;; esac
+case "$SETUP_MODE" in up|check|down|only) ;; *) usage; exit 2 ;; esac
 case "$SYSTEM" in training|inference|monitoring) ;; *) usage; exit 2 ;; esac
-[ $# -eq 2 ] || { usage; exit 2; }
+if [ "$SETUP_MODE" = "only" ]; then
+  [ $# -eq 3 ] && env_matches "$ONLY" '^[0-9]{2}_[a-z_]+$' || { usage; exit 2; }
+else
+  [ $# -eq 2 ] || { usage; exit 2; }
+fi
 
 # Define NAME, MAKE_NAME, REQUIRED, STEPS, COST y NEXT.
 . "$ROOT/setup/$SYSTEM/system.sh" || exit 1
 COMMAND="make $MAKE_NAME-$SETUP_MODE"
+if [ "$SETUP_MODE" = "only" ]; then COMMAND="bash setup/run.sh only $SYSTEM $ONLY"; fi
 
 if [ "$(id -u)" -eq 0 ]; then die "Córrelo sin sudo: tus sesiones de AWS y GitHub están en tu usuario."; fi
 if [ "$SETUP_MODE" != "check" ] && [ ! -t 0 ]; then die "Córrelo en una terminal interactiva: puede necesitar preguntarte algo."; fi
@@ -47,7 +53,7 @@ if ! env_load "$ROOT/.env" "${REQUIRED[@]}"; then
 fi
 
 STEPS_FOUND=()
-if [ "$SETUP_MODE" = "down" ]; then STEPS="down"; fi
+case "$SETUP_MODE" in down) STEPS="down" ;; only) STEPS="$ONLY" ;; esac
 for step in $STEPS; do
   [ -f "$ROOT/setup/$SYSTEM/$step.sh" ] || die "Falta setup/$SYSTEM/$step.sh."
   STEPS_FOUND+=("$ROOT/setup/$SYSTEM/$step.sh")

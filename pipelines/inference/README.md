@@ -20,6 +20,27 @@ La guía va del Paso 0 al 6, en orden. Los pasos 1 al 3 preparan todo y se hacen
 
 💰 = cobra mientras corre.
 
+## Camino rápido: los pasos 1 al 3 con un comando
+
+Después del [Paso 0](#paso-0--completar-el-setup-de-entrenamiento), con el mismo `.env`:
+
+```bash
+make inference-up
+```
+
+Informa, pide una confirmación y corre los pasos en orden. Si falta el `@champion` o algo del entrenamiento, se detiene y
+dice qué correr. Repetirlo continúa donde quedó.
+
+| Comando | Qué hace |
+|---|---|
+| `make inference-check` | solo lee: qué está listo y qué falta |
+| `make inference-down` | apaga la corrida semanal; no borra nada |
+
+Sigue en el [Paso 4](#paso-4--desplegar-el-pipeline). Lo de abajo explica cada paso; sus `paso*.sh` hacen lo mismo uno por
+uno y se conservan como respaldo.
+
+## Paso a paso
+
 **Cómo se comportan los scripts:** igual que los de entrenamiento. Revisan, muestran qué falta, preguntan `[y/n]` y
 comprueban el resultado. Sin una `y` no cambian nada, repetirlos es seguro y no piden credenciales.
 
@@ -140,4 +161,5 @@ bash pipelines/inference/setup/paso6.sh --estado=off
 **Qué hace:** para encenderla exige que la última corrida haya terminado bien y muestra qué lote usaría. Apagarla nunca
 se bloquea.
 
-⚠️ `make up-inference` la vuelve a apagar; `paso2.sh`, no.
+Lo mismo con `make schedule-on` (pregunta antes) y `make schedule-off`. Volver a correr `make inference-up` o `paso2.sh`
+no cambia su estado.

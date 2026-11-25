@@ -70,3 +70,15 @@ read_lots() {
   [ -n "$LOTS" ] || die "No hay datos en raw/: corre primero make train-up."
   ok "Lotes de datos: $(printf '%s' "$LOTS" | paste -s -d ' ' -)"
 }
+
+# Deja en SCHEDULE el estado del scheduler de inferencia: ENABLED | DISABLED | falta.
+SCHEDULE=""
+read_schedule() {
+  if spin "Leyendo el scheduler" aws scheduler get-schedule --region "$REGION" --name vantix-inference-weekly --query State --output text; then
+    SCHEDULE="$(tail -n 1 "$LOG")"
+    case "$SCHEDULE" in ENABLED|DISABLED) return 0 ;; esac
+    die "AWS respondió un estado inesperado del scheduler: $SCHEDULE"
+  fi
+  grep 'ResourceNotFoundException' "$LOG" >/dev/null || { show_log; die "No se pudo leer el scheduler (ver el error arriba)."; }
+  SCHEDULE="falta"
+}

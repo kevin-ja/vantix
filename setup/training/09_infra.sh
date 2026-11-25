@@ -3,20 +3,6 @@
 # infra/shared (bucket de datos, OIDC y roles de GitHub) → infra/training (rol de ejecución).
 . "$(dirname "${BASH_SOURCE[0]}")/../common/step.sh"
 
-check_requirements() {
-  local value
-  check_aws
-  check_state_bucket
-  check_terraform
-  # infra/shared lee el estado de MLflow: sin él, Terraform fallaría con un error difícil de entender.
-  spin "Buscando MLflow" aws s3api head-object --bucket "$STATE_BUCKET" --key mlflow-server/terraform.tfstate \
-    || { show_log; die "MLflow no está levantado."; }
-  ok "MLflow: levantado"
-  value="$(tfvars_values "$ROOT/infra/shared/terraform.tfvars" github_repo)"
-  [ -n "$value" ] || die "Falta autorizar tu repo (github_repo en infra/shared/terraform.tfvars)."
-  ok "Repo autorizado: $value"
-}
-
 check_outputs() {
   local bucket role
   bucket="$(tf infra/shared output -raw data_bucket)" && role="$(tf infra/training output -raw training_role_arn)" \
@@ -28,7 +14,11 @@ check_outputs() {
 }
 
 review() {
-  check_requirements
+  check_aws
+  check_state_bucket
+  check_terraform
+  check_mlflow_state
+  check_github_repo
   # infra/training lee los datos de infra/shared: solo se revisa si ese ya está al día.
   tf_review infra/shared shared/terraform.tfstate || return 0
   tf_review infra/training training/terraform.tfstate || return 0

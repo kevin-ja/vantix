@@ -27,7 +27,8 @@ repo autorizado, MLflow, datos y un modelo promovido.
 | 2 | Inferencia | un `@champion` promovido | Pasos 0 al 6 de [`pipelines/inference/README.md`](pipelines/inference/README.md), con los scripts de [`pipelines/inference/setup/`](pipelines/inference/setup/) |
 | 3 | Monitorización | un `@champion` y datos en `raw/` | Pasos 0 al 7 de [`monitorization/README.md`](monitorization/README.md), con los scripts de [`monitorization/setup/`](monitorization/setup/) |
 
-**Entrenamiento con un comando:** `cp .env.example .env`, complétalo y corre `make train-up` (pasos 1 al 11).
+**Con un comando:** `cp .env.example .env`, complétalo y corre `make train-up` (entrenamiento, pasos 1 al 11). Después de
+entrenar y promover: `make inference-up` (inferencia, pasos 1 al 3).
 
 **Lo que debes saber antes:**
 
