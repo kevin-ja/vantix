@@ -33,6 +33,30 @@ La guía va del Paso 0 al 13, en orden: cada paso necesita los anteriores. Los p
 
 💰 = cobra mientras está en uso.
 
+## Camino rápido: los pasos 1 al 11 con un comando
+
+Después del [Paso 0](#paso-0--tener-tu-propia-copia-del-repo):
+
+```bash
+cp .env.example .env     # complétalo: no lleva contraseñas, llaves ni tokens
+make train-up
+```
+
+`make train-up` revisa el `.env`; si falta o está mal un solo dato, lo dice y se detiene sin tocar nada. Después informa,
+pide una confirmación y corre los pasos en orden. Solo vuelve a preguntar antes de instalar programas, cambiar algo que
+ya existe, reemplazar o destruir recursos, o pedir cuota a AWS. Si se detiene, corrige y repite: continúa donde quedó. El
+detalle queda en `setup/logs/`.
+
+| Comando | Qué hace |
+|---|---|
+| `make train-check` | solo lee: qué está listo y qué falta |
+| `make train-down` | 💰 apaga la EC2 de MLflow; no borra nada |
+
+Sigue en el [Paso 12](#paso-12--entrenar). Lo de abajo explica cada paso; sus `paso*.sh` hacen lo mismo uno por uno y se
+conservan como respaldo.
+
+## Paso a paso
+
 **Cómo se comportan los scripts:** revisan qué tienes, muestran qué falta, preguntan `[y/n]` y comprueban el resultado.
 Sin una `y` no cambian nada (excepción: el Paso 8 enciende MLflow si está apagado), y repetirlos es seguro: solo hacen
 lo que falta. Ninguno pide contraseñas, tokens ni llaves; los inicios de sesión ocurren en el navegador. Si uno se

@@ -62,6 +62,8 @@ env_load() {
     case "$seen" in *" $key "*) env_problem "$key" "está repetida"; continue ;; esac
     seen="$seen$key "
     value="$(printf '%s\n' "${line#*=}" | sed -E -e 's/^[[:space:]]+//' -e "s/^\"(.*)\"\$/\\1/" -e "s/^'(.*)'\$/\\1/")"
+    # El portal suele copiarse con "#" o "/" al final.
+    if [ "$key" = "SSO_START_URL" ]; then value="$(printf '%s' "$value" | sed -e 's/[#/]*$//')"; fi
     printf -v "$key" '%s' "$value"
     export "${key?}"
   done < "$file"

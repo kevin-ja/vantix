@@ -27,6 +27,8 @@ repo autorizado, MLflow, datos y un modelo promovido.
 | 2 | Inferencia | un `@champion` promovido | Pasos 0 al 6 de [`pipelines/inference/README.md`](pipelines/inference/README.md), con los scripts de [`pipelines/inference/setup/`](pipelines/inference/setup/) |
 | 3 | Monitorización | un `@champion` y datos en `raw/` | Pasos 0 al 7 de [`monitorization/README.md`](monitorization/README.md), con los scripts de [`monitorization/setup/`](monitorization/setup/) |
 
+**Entrenamiento con un comando:** `cp .env.example .env`, complétalo y corre `make train-up` (pasos 1 al 11).
+
 **Lo que debes saber antes:**
 
 - **Cuenta de AWS:** una **member account** dedicada a Vantix, a la que se entra con **SSO**. Todo se crea en
@@ -58,6 +60,7 @@ infra/
   inference/     bucket de scores + rol de ejecución + EventBridge Scheduler (semanal, apagado por defecto)
 mlflow_server/   servidor de MLflow propio (EC2 + Docker + Litestream → S3 + CloudFront); autocontenido, ver su README
 monitorization/  monitoreo de datos (Data Quality + Data Drift → PostgreSQL → Grafana); infra y CI/CD propios
+setup/           make train-up / check / down: run.sh, common/ y los pasos de cada sistema
 scripts/         upload_raw.py (Parquet/CSV -> s3://…/raw/ingest_date=…/) · check_data.py · freeze_benchmark.py ·
                  make_synthetic_batch.py · migrate_mlflow.py
 segment_maps/    nombres de los segmentos por champion (<snapshot_date>_k<k>.json)
@@ -88,7 +91,7 @@ tests/
 ## Apagar
 
 ```bash
-make mlflow-stop                    # apaga la EC2 de MLflow; el estado vive en S3 (mlflow-start para volver)
+make train-down                     # apaga la EC2 de MLflow; el estado vive en S3 (make train-up para volver)
 make schedule-off                   # apaga la corrida semanal de inferencia
 make mlflow-server-down             # quita el cómputo de MLflow (EC2, IP, CloudFront); conserva su bucket
 cd monitorization && make down      # quita el cómputo del monitoreo; conserva su bucket y sus datos
