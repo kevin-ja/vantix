@@ -12,42 +12,31 @@ Problema de negocio: [`bussines_problem.md`](bussines_problem.md) · Arquitectur
 |---|---|---|
 | Servidor de MLflow | `mlflow_server/` | [`mlflow_server/README.md`](mlflow_server/README.md) |
 | Entrenamiento | `pipelines/training/` + `infra/shared`, `infra/training` | [`pipelines/training/README.md`](pipelines/training/README.md) |
-| Inferencia (batch semanal) | `pipelines/inference/` + `infra/inference` | sección [AWS: inferencia](#aws-inferencia) |
-| Monitorización | `monitorization/` | [`monitorization/doc/`](monitorization/doc/monitorization_arch.md) |
+| Inferencia (batch) | `pipelines/inference/` + `infra/inference` | [`pipelines/inference/README.md`](pipelines/inference/README.md) |
+| Monitorización | `monitorization/` | [`monitorization/README.md`](monitorization/README.md) |
 
-## 1. Requisitos (una vez por máquina)
+## Por dónde empezar
 
-| Herramienta | Versión | Para qué |
-|---|---|---|
-| AWS CLI | v2 | acceso a la cuenta |
-| Terraform | 1.15.8 | infraestructura |
-| Docker con `buildx` | — | imágenes de MLflow y del monitoreo |
-| `uv` | — | entornos de Python (`make venv`) |
-| `session-manager-plugin` | — | administrar las EC2 sin SSH |
-| `gh` (GitHub CLI) | — | variables y workflows de GitHub |
-| `make`, `git` | — | — |
+**Sigue la guía de entrenamiento:** [`pipelines/training/README.md`](pipelines/training/README.md). Parte de cero y
+explica qué se hace y por qué en cada paso. Deja listo lo que usan los demás sistemas: herramientas, cuenta de AWS,
+repo autorizado, MLflow, datos y un modelo promovido.
 
-## 2. Cuenta de AWS
+| Orden | Sistema | Qué necesita | Cómo |
+|---|---|---|---|
+| 1 | Entrenamiento y MLflow | nada | Pasos 0 al 13 de [`pipelines/training/README.md`](pipelines/training/README.md), con los scripts de [`pipelines/training/setup/`](pipelines/training/setup/) |
+| 2 | Inferencia | un `@champion` promovido | Pasos 0 al 6 de [`pipelines/inference/README.md`](pipelines/inference/README.md), con los scripts de [`pipelines/inference/setup/`](pipelines/inference/setup/) |
+| 3 | Monitorización | un `@champion` y datos en `raw/` | Pasos 0 al 7 de [`monitorization/README.md`](monitorization/README.md), con los scripts de [`monitorization/setup/`](monitorization/setup/) |
 
-1. Una cuenta de AWS con permisos de administrador. Región: **`us-east-1`** (fija en los workflows).
-2. Perfil de la CLI. El nombre por defecto es `vantix`; otro nombre se pasa con `AWS_PROFILE=<perfil>` en cada `make`.
-   ```bash
-   aws configure sso --profile vantix     # o: aws configure --profile vantix (llaves de IAM)
-   make login                             # aws sso login --profile vantix (cuando venza la sesión)
-   aws sts get-caller-identity --profile vantix   # comprobar
-   ```
-3. Entorno de Python local: `make venv` (Python 3.11 + mismas versiones que SageMaker y MLflow).
+**Lo que debes saber antes:**
 
-Sin secretos en el repo: las contraseñas las genera Terraform y viven en SSM; los workflows entran a AWS por OIDC.
-
-## 3. Orden de levantamiento
-
-Cada sistema depende del anterior:
-
-1. **MLflow** → `make bootstrap` (bucket del estado de Terraform) + `make mlflow-server-up`
-2. **Entrenamiento** → [`pipelines/training/README.md`](pipelines/training/README.md)
-3. **Inferencia** → necesita un `@champion` promovido ([AWS: inferencia](#aws-inferencia))
-4. **Monitorización** → necesita el champion y datos en `raw/` ([`monitorization/doc/ci_cd.md`](monitorization/doc/ci_cd.md))
+- **Cuenta de AWS:** una **member account** dedicada a Vantix, a la que se entra con **SSO**. Todo se crea en
+  `us-east-1`. No se recomienda la *management account*, el usuario root ni un IAM user con llaves fijas.
+- **Tu máquina:** macOS o Linux (en Windows, WSL2). Los scripts que instalan las herramientas e inician sesión en AWS
+  son solo para macOS.
+- **Entrenar y promover** se hace siempre desde GitHub Actions y con aprobación, para que cada corrida quede registrada.
+- **La infraestructura** se crea con Terraform desde tu máquina, no desde GitHub: requiere permisos de administrador.
+- **Sin secretos en el repo:** las contraseñas las genera Terraform y viven en AWS (SSM); los workflows entran a AWS por
+  OIDC, sin llaves.
 
 ## Estructura
 
@@ -58,9 +47,11 @@ pipelines/
   training/
     steps/       prepare.py (Processing job) · train.py (Processing job mientras la cuota de cómputo de AWS SageMaker para Training jobs sea 0)
     evaluation.py · promote.py · pipeline_sagemaker.py · requirements.txt
+    setup/       paso1.sh … paso11.sh: preparan todo para entrenar, una sola vez (ver su README)
   inference/
     steps/       score.py (Processing job)
     pipeline_sagemaker.py · requirements.txt
+    setup/       paso1.sh … paso3.sh y paso6.sh: preparan la inferencia (ver su README)
 infra/
   shared/        S3 de datos + roles OIDC de GitHub + conexión al MLflow propio (URL y contraseña en SSM)
   training/      rol de ejecución del pipeline
@@ -73,24 +64,12 @@ segment_maps/    nombres de los segmentos por champion (<snapshot_date>_k<k>.jso
 tests/
 ```
 
-## AWS: inferencia
-
-Requisitos: un `@champion` exportado (workflow `promote_best_model_manual`) y datos en `raw/`. MLflow puede estar apagado.
-
-```bash
-make up-inference                   # bucket de scores + rol + scheduler (apagado)
-make inference-run INF_SNAPSHOT=2025-04-30 SCORING_DATE=2025-05-01   # datos históricos
-make schedule-on                    # tras validar la corrida: cada lunes 06:00 UTC con fechas "auto"
-```
-
-Desde GitHub: Actions → `batch_inference_manual` (con aprobación). Salida: `s3://vantix-<cuenta>-scores/scores/scoring_date=…/scores.parquet` + `summary.json`, y `scores/latest.json` (lo lee la API de campañas).
-
 ## CI/CD (GitHub Actions)
 
 | Workflow | Disparo |
 |---|---|
 | `code_quality_check` | Automático: cada PR y push a `main` (lint, tests, Terraform) |
-| `deploy_inference` | Automático: merge con cambios en `pipelines/inference/`; manual con `ref` para rollback |
+| `deploy_inference` | Automático: merge con cambios en `pipelines/inference/` (excepto `setup/` y `.md`); manual con `ref` para rollback |
 | `train_pipeline_manual` | Manual: reentrenamiento (features + KMeans → MLflow) |
 | `promote_best_model_manual` · `rollback_model_manual` | Manual: cambiar `@champion` |
 | `batch_inference_manual` | Manual: puntuar con el `@champion` vigente |
@@ -110,7 +89,7 @@ Desde GitHub: Actions → `batch_inference_manual` (con aprobación). Salida: `s
 
 ```bash
 make mlflow-stop                    # apaga la EC2 de MLflow; el estado vive en S3 (mlflow-start para volver)
-make down-training                  # quita el rol de training
-make down-inference                 # quita bucket de scores, rol y scheduler
-make down-all CONFIRM=yes           # borra todo, incluidos datos y modelos
+make schedule-off                   # apaga la corrida semanal de inferencia
+make mlflow-server-down             # quita el cómputo de MLflow (EC2, IP, CloudFront); conserva su bucket
+cd monitorization && make down      # quita el cómputo del monitoreo; conserva su bucket y sus datos
 ```
