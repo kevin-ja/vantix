@@ -1,12 +1,7 @@
 # VANTIX · Makefile
 #
-# Infra (Terraform)
-#   make up-training       levanta shared (si falta) + training
-#   make up-inference      levanta shared (si falta) + inference
-#   make down-training     baja solo training (shared queda)
-#   make down-inference    baja solo inference (shared queda)
-#   make down-shared       baja S3 de datos (pide CONFIRM=yes)
-#   make down-all          baja todo (pide CONFIRM=yes)
+# Infra: se levanta con los scripts de setup (pipelines/training/setup, pipelines/inference/setup, monitorization/setup)
+#   make bootstrap         bucket del estado de Terraform
 # MLflow propio (EC2 de mlflow_server/; ~USD 0,03/h encendido, arranca en ~30 s)
 #   make mlflow-start | mlflow-stop | mlflow-status
 # Datos y pipeline de entrenamiento
@@ -22,22 +17,18 @@
 # Pipeline de inferencia
 #   make inference-upsert  crea/actualiza el pipeline en SageMaker
 #   make inference-run     ejecuta el pipeline (fechas "auto" o SCORING_DATE, INF_SNAPSHOT, INF_INGEST)
-#   make schedule-on | schedule-off   activa/apaga la corrida semanal (up-inference la deja apagada)
+#   make schedule-on | schedule-off   activa/apaga la corrida semanal (paso6.sh de inferencia; pregunta antes)
 # Desarrollo (entorno, tests y lint; lo mismo corre en CI)
 #   make venv | test | lint
 # MLflow propio (mlflow_server/, ver mlflow_server/README.md)
 #   make mlflow-server-<target>   p. ej. mlflow-server-up | -start | -stop | -status | -smoke | -recreate-test
 # Docs
 #   make docs-env | diagrams    venv + Graphviz locales en docs/ -> docs/img/*.png
-#
-# "up" es idempotente: desde cero crea todo; con infra ya levantada solo aplica cambios.
-# Sin confirmación interactiva: make up-training TF_ARGS=-auto-approve
 
 AWS_PROFILE ?= vantix
 REGION      ?= us-east-1
 TF          := terraform
 INFRA       := infra
-TF_ARGS     ?=
 PY          := .venv/bin/python
 
 INGEST_DATE   ?= 2025-04-30
@@ -58,44 +49,20 @@ ACCOUNT_ID   = $(eval ACCOUNT_ID := $(shell aws sts get-caller-identity --profil
 STATE_BUCKET = vantix-$(ACCOUNT_ID)-tfstate
 export TF_VAR_state_bucket = $(STATE_BUCKET)
 
-.PHONY: help login bootstrap up-shared up-training up-inference down-training down-inference \
-        down-shared down-all mlflow-stop mlflow-start mlflow-status get-data check-data upload-data pipeline-upsert \
+.PHONY: help login bootstrap mlflow-stop mlflow-start mlflow-status get-data check-data upload-data pipeline-upsert \
         pipeline-run check-clean promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
         venv test lint docs-env diagrams
 
 help:
-	@sed -n '3,34p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,26p' Makefile | sed 's/^# \{0,1\}//'
 
 login:
 	aws sso login --profile $(AWS_PROFILE)
 
 # --- helpers -----------------------------------------------------------------
-define tf_init
-	$(TF) -chdir=$(INFRA)/$(1) init -input=false -reconfigure \
-		-backend-config="bucket=$(STATE_BUCKET)" \
-		-backend-config="key=$(1)/terraform.tfstate" \
-		-backend-config="region=$(REGION)" \
-		-backend-config="profile=$(AWS_PROFILE)" \
-		-backend-config="use_lockfile=true"
-endef
-
-define tf_up
-	$(call tf_init,$(1))
-	$(TF) -chdir=$(INFRA)/$(1) apply $(TF_ARGS)
-endef
-
-define tf_down
-	$(call tf_init,$(1))
-	$(TF) -chdir=$(INFRA)/$(1) destroy $(TF_ARGS)
-endef
-
-define require_confirm
-	@test "$(CONFIRM)" = "yes" || { echo "Borra el S3 de datos (incluidos los modelos). Repite con CONFIRM=yes"; exit 1; }
-endef
-
 tf_output = $(shell $(TF) -chdir=$(INFRA)/$(1) output -raw $(2))
 
-# --- bootstrap: bucket del estado de Terraform (idempotente, no se borra con down) ---
+# --- bootstrap: bucket del estado de Terraform (idempotente) ---
 bootstrap:
 	@aws s3api head-bucket --bucket $(STATE_BUCKET) 2>/dev/null && echo "state bucket OK: $(STATE_BUCKET)" || { \
 		aws s3api create-bucket --bucket $(STATE_BUCKET) --region $(REGION) && \
@@ -103,32 +70,6 @@ bootstrap:
 		aws s3api put-public-access-block --bucket $(STATE_BUCKET) --public-access-block-configuration \
 			BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true && \
 		echo "state bucket creado: $(STATE_BUCKET)"; }
-
-# --- up ----------------------------------------------------------------------
-up-shared: bootstrap
-	$(call tf_up,shared)
-
-up-training: up-shared
-	$(call tf_up,training)
-
-up-inference: up-shared
-	$(call tf_up,inference)
-
-# --- down --------------------------------------------------------------------
-down-training:
-	$(call tf_down,training)
-
-down-inference:
-	$(call tf_down,inference)
-
-down-shared:
-	$(call require_confirm)
-	$(call tf_down,shared)
-
-down-all:
-	$(call require_confirm)
-	$(MAKE) down-training down-inference
-	$(MAKE) down-shared CONFIRM=yes
 
 # --- MLflow propio (mlflow_server/): la EC2 se busca por su tag Name (el id cambia al reemplazarse) ----
 MLFLOW_INSTANCE_NAME := vantix-mlflow-server
@@ -234,10 +175,10 @@ inference-run: check-clean
 		--window-days $(WINDOW_DAYS)
 
 schedule-on:
-	$(MAKE) up-inference TF_ARGS="$(TF_ARGS) -var=schedule_enabled=true"
+	bash pipelines/inference/setup/paso6.sh --estado=on --profile=$(AWS_PROFILE)
 
 schedule-off:
-	$(MAKE) up-inference TF_ARGS="$(TF_ARGS) -var=schedule_enabled=false"
+	bash pipelines/inference/setup/paso6.sh --estado=off --profile=$(AWS_PROFILE)
 
 # --- desarrollo --------------------------------------------------------------
 venv:

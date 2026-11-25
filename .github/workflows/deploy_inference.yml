@@ -9,7 +9,10 @@ name: deploy_inference
 on:
   push:
     branches: [main]
-    paths: ["pipelines/inference/**"]
+    paths:
+      - "pipelines/inference/**"
+      - "!pipelines/inference/setup/**"   # scripts de preparación y documentación: no cambian el pipeline
+      - "!pipelines/inference/**/*.md"
   workflow_dispatch:
     inputs:
       ref:
