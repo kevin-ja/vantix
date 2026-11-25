@@ -24,6 +24,28 @@ La guía va del Paso 0 al 7, en orden. Los pasos 1 al 4 preparan todo y se hacen
 
 💰 = cobra mientras la EC2 está encendida.
 
+## Camino rápido: los pasos 1 al 4 con un comando
+
+Después del [Paso 0](#paso-0--completar-el-setup-de-entrenamiento), con el mismo `.env` (`ALERT_EMAIL` es obligatorio):
+
+```bash
+make monitoring-up
+```
+
+Informa, pide una confirmación y corre los pasos en orden. Termina con la EC2 encendida y Grafana respondiendo. Si falta
+el `@champion` o algo del entrenamiento, se detiene y dice qué correr. Repetirlo continúa donde quedó.
+
+| Comando | Qué hace |
+|---|---|
+| `make monitoring-check` | solo lee: qué está listo y qué falta |
+| `make monitoring-down` | 💰 apaga la EC2; no borra nada |
+| `make monitoring-sample-batch TIPO=estable` | [Paso 6](#paso-6--crear-un-lote-de-prueba-opcional); también `TIPO=degradado` y `LOTE=AAAA-MM-DD` |
+
+Sigue en el [Paso 5](#paso-5--construir-el-benchmark). Lo de abajo explica cada paso; sus `paso*.sh` hacen lo mismo uno por
+uno y se conservan como respaldo. Única diferencia: `paso3.sh` no enciende una EC2 apagada.
+
+## Paso a paso
+
 **Cómo se comportan los scripts:** igual que los de entrenamiento. Revisan, muestran qué falta, preguntan `[y/n]` y
 comprueban el resultado. Sin una `y` no cambian nada, repetirlos es seguro y no piden credenciales.
 

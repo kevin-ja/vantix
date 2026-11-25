@@ -28,7 +28,7 @@ repo autorizado, MLflow, datos y un modelo promovido.
 | 3 | Monitorización | un `@champion` y datos en `raw/` | Pasos 0 al 7 de [`monitorization/README.md`](monitorization/README.md), con los scripts de [`monitorization/setup/`](monitorization/setup/) |
 
 **Con un comando:** `cp .env.example .env`, complétalo y corre `make train-up` (entrenamiento, pasos 1 al 11). Después de
-entrenar y promover: `make inference-up` (inferencia, pasos 1 al 3).
+entrenar y promover: `make inference-up` (inferencia, pasos 1 al 3) y `make monitoring-up` (monitoreo, pasos 1 al 4).
 
 **Lo que debes saber antes:**
 
@@ -95,5 +95,6 @@ tests/
 make train-down                     # apaga la EC2 de MLflow; el estado vive en S3 (make train-up para volver)
 make schedule-off                   # apaga la corrida semanal de inferencia
 make mlflow-server-down             # quita el cómputo de MLflow (EC2, IP, CloudFront); conserva su bucket
+make monitoring-down                # apaga la EC2 del monitoreo (make monitoring-up para volver)
 cd monitorization && make down      # quita el cómputo del monitoreo; conserva su bucket y sus datos
 ```

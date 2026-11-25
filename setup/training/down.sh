@@ -7,11 +7,8 @@ TAG="vantix-mlflow-server"   # etiqueta Name de la EC2: el id cambia al reemplaz
 INSTANCE=""
 review() {
   check_aws
-  spin "Buscando la EC2 de MLflow" aws ec2 describe-instances --region "$REGION" --output text \
-    --filters "Name=tag:Name,Values=$TAG" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
-    --query 'Reservations[].Instances[].InstanceId' || { show_log; die "No se pudo buscar la EC2."; }
-  INSTANCE="$(awk '{print $1; exit}' "$LOG")"
-  if [ -z "$INSTANCE" ] || [ "$INSTANCE" = "None" ]; then ok "No hay EC2 de MLflow: nada que apagar"; return 0; fi
+  find_instance "$TAG"
+  if [ -z "$INSTANCE" ]; then ok "No hay EC2 de MLflow: nada que apagar"; return 0; fi
   ec2_state "$INSTANCE"
   case "$STATE" in
     stopped|stopping) ok "EC2 $INSTANCE: ya estaba apagada" ;;

@@ -44,6 +44,15 @@ build_image() {
   live docker_lines push_image "$repo" "$tag" "$@"
 }
 
+# find_instance <etiqueta Name> -> deja el id en INSTANCE, o vacío si no existe
+find_instance() {
+  spin "Buscando la EC2" aws ec2 describe-instances --region "$REGION" --output text \
+    --filters "Name=tag:Name,Values=$1" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+    --query 'Reservations[].Instances[].InstanceId' || { show_log; die "No se pudo buscar la EC2."; }
+  INSTANCE="$(awk '{print $1; exit}' "$LOG")"
+  if [ "$INSTANCE" = "None" ]; then INSTANCE=""; fi
+}
+
 # ec2_state <id> -> deja el estado en STATE
 ec2_state() {
   spin "Comprobando la EC2" aws ec2 describe-instances --region "$REGION" --instance-ids "$1" \
