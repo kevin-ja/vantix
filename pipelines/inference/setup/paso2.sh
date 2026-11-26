@@ -4,7 +4,7 @@
 #   bash pipelines/inference/setup/paso2.sh
 #   --profile=NOMBRE     si tu perfil de AWS no se llama vantix
 #
-# Misma lógica que `make up-inference`, sin depender del Makefile: infra/shared → infra/inference (bucket de scores, rol
+# Misma lógica que `make inference-up` (antes `make up-inference`), sin depender del Makefile: infra/shared → infra/inference (bucket de scores, rol
 # de ejecución y scheduler semanal). Para cada módulo muestra los cambios de Terraform y pregunta (y/n).
 # Respeta el scheduler: si es nuevo, lo crea apagado; si ya existe, lo deja como está (se cambia con paso6.sh).
 # No necesita credenciales: usa la sesión de tu perfil de AWS.

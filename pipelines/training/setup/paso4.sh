@@ -321,7 +321,7 @@ main() {
     ok "$file: github_repo = \"$VALUE\""
   done
   if [ "$changed" -eq 1 ]; then
-    warn "El valor cambió. Si ya habías levantado la infraestructura, aplícalo: make up-training y cd monitorization && make up"
+    warn "El valor cambió. Si ya habías levantado la infraestructura, aplícalo: make train-up y make monitoring-up"
   fi
   title "Todo listo. Puedes seguir con el Paso 5 del README."
 }

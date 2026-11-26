@@ -423,7 +423,7 @@ main() {
   if spin "Comprobando Docker" docker_on; then ok "Docker: encendido"; else die "Docker dejó de responder: ábrelo y vuelve a correr este script."; fi
   title "Todo listo. Puedes seguir con el siguiente paso del README."
   if [ "$PROFILE" != "vantix" ]; then
-    warn "Tu perfil no se llama vantix: agrégalo a cada comando, p. ej. make up-training AWS_PROFILE=$PROFILE"
+    warn "Tu perfil no se llama vantix: agrégalo a cada comando, p. ej. make mlflow-status AWS_PROFILE=$PROFILE"
   fi
 }
 

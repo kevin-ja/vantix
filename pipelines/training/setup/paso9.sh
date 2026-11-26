@@ -4,7 +4,7 @@
 #   bash pipelines/training/setup/paso9.sh
 #   --profile=NOMBRE     si tu perfil de AWS no se llama vantix
 #
-# Misma lógica que `make up-training`, sin depender del Makefile: infra/shared (bucket de datos, OIDC y roles de GitHub)
+# Misma lógica que `make train-up` (antes `make up-training`), sin depender del Makefile: infra/shared (bucket de datos, OIDC y roles de GitHub)
 # → infra/training (rol de ejecución). Para cada módulo muestra los cambios de Terraform y pregunta (y/n).
 # No necesita credenciales: usa la sesión de tu perfil de AWS (paso2.sh).
 # Compatible con bash 3.2, el que trae macOS (por eso sin `set -u`).

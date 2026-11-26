@@ -8,7 +8,7 @@ terraform {
     }
   }
 
-  # Configuración parcial: el Makefile pasa bucket, key, region y profile (make up-inference).
+  # Configuración parcial: setup/common/terraform.sh pasa bucket, key, region y profile (make train-up, inference-up).
   backend "s3" {}
 }
 
