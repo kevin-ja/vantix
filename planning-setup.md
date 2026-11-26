@@ -1,6 +1,6 @@
 # Plan: setup global automatizado
 
-Estado: **fases 1 a 3 hechas** (`setup/common/`, `.env`, `run.sh`, `train-*` e `inference-*`). Sigue la fase 4.
+Estado: **fases 1 a 4 hechas**. Falta la fase 5: ordenar el Makefile y la prueba desde cero en una cuenta nueva.
 
 ## 1. Objetivo y regla principal
 
@@ -41,6 +41,7 @@ con aprobación), el código de los pipelines y los módulos de Terraform.
 | `make inference-down` | apaga el scheduler semanal | inference 6 con `--estado=off` |
 | `make monitoring-down` | apaga la EC2 de monitoreo | `make stop` de `monitorization/` |
 
+- `monitoring-up` también enciende la EC2 si está apagada (monitoring 3 no lo hacía): así deshace `monitoring-down`.
 - `down` **no borra nada**; la IP y los discos se siguen cobrando (~USD 5 a 6/mes por EC2).
 - Los pasos opcionales quedan como comandos aparte: scheduler (inference 6) y lote de prueba (monitoring 6).
 

@@ -6,7 +6,9 @@
 #   make train-down        apaga la EC2 de MLflow; no borra nada
 #   make inference-up      levanta inferencia (exige un @champion): bucket de scores, roles, scheduler apagado y GitHub
 #   make inference-check   solo lee · make inference-down   apaga la corrida semanal; no borra nada
-#   Monitorización: por ahora, con monitorization/setup
+#   make monitoring-up     levanta el monitoreo (exige un @champion): correo, imagen, EC2, Grafana y GitHub
+#   make monitoring-check  solo lee · make monitoring-down   apaga la EC2; no borra nada
+#   make monitoring-sample-batch TIPO=estable|degradado [LOTE=fecha]   lote de prueba (opcional; pregunta antes)
 #   make bootstrap         bucket del estado de Terraform (train-up ya lo hace)
 # MLflow propio (EC2 de mlflow_server/; ~USD 0,03/h encendido, arranca en ~30 s)
 #   make mlflow-start | mlflow-stop | mlflow-status
@@ -52,12 +54,13 @@ export AWS_PROFILE
 ACCOUNT_ID   = $(eval ACCOUNT_ID := $(shell aws sts get-caller-identity --profile $(AWS_PROFILE) --query Account --output text 2>/dev/null))$(ACCOUNT_ID)
 STATE_BUCKET = vantix-$(ACCOUNT_ID)-tfstate
 
-.PHONY: help train-up train-check train-down inference-up inference-check inference-down login bootstrap mlflow-stop mlflow-start mlflow-status get-data check-data upload-data pipeline-upsert \
+.PHONY: help train-up train-check train-down inference-up inference-check inference-down \
+        monitoring-up monitoring-check monitoring-down monitoring-sample-batch login bootstrap mlflow-stop mlflow-start mlflow-status get-data check-data upload-data pipeline-upsert \
         pipeline-run check-clean promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
         venv test lint docs-env diagrams
 
 help:
-	@sed -n '3,32p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,34p' Makefile | sed 's/^# \{0,1\}//'
 
 login:
 	aws sso login --profile $(AWS_PROFILE)
@@ -80,6 +83,18 @@ inference-check:
 
 inference-down:
 	@bash setup/run.sh down inference
+
+monitoring-up:
+	@bash setup/run.sh up monitoring
+
+monitoring-check:
+	@bash setup/run.sh check monitoring
+
+monitoring-down:
+	@bash setup/run.sh down monitoring
+
+monitoring-sample-batch:
+	@TIPO="$(TIPO)" LOTE="$(LOTE)" bash setup/run.sh only monitoring 06_sample_batch
 
 # --- helpers -----------------------------------------------------------------
 tf_output = $(shell $(TF) -chdir=$(INFRA)/$(1) output -raw $(2))

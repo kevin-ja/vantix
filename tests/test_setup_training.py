@@ -15,6 +15,8 @@ SHA = hashlib.sha256(DATA.encode()).hexdigest()
 CLOUD = {
     "aws": r"""
 echo "aws $*" >> "$CALLS"
+ec2="$S/ec2"; id=i-1
+case "$*" in *i-2*|*vantix-monitoring-server*) ec2="$S/ec2.monitoring"; id=i-2 ;; esac
 missing() { echo "An error occurred ($1)" >&2; exit 254; }
 case "$1 $2" in
   "--version ") echo "aws-cli/2.36.0" ;;
@@ -49,16 +51,26 @@ case "$1 $2" in
     esac ;;
   "s3api list-objects-v2")
     case "$*" in *models/champion/*) tr '\n' '\t' < "$S/champion" 2>/dev/null || echo None; exit ;; esac
-    [ -f "$S/lot" ] && echo "raw/ingest_date=2025-04-30/data.parquet" || echo None ;;
-  "ecr describe-images") [ -f "$S/image" ] || missing ImageNotFoundException ;;
+    [ -f "$S/lot" ] || { echo None; exit; }
+    case "$*" in *data.parquet*) echo "raw/ingest_date=2025-04-30/data.parquet" ;;
+                 *) sed 's#.*#raw/ingest_date=&/data.parquet#' "$S/lots" ;; esac ;;
+  "ecr describe-images") [ -f "$S/image.${6%%-backend}" ] || missing ImageNotFoundException ;;
   "ecr get-login-password") echo clave-ecr ;;
   "ec2 describe-instances")
-    case "$*" in *InstanceId*) [ -f "$S/ec2" ] && echo i-1 || echo None ;; *) cat "$S/ec2" ;; esac ;;
-  "ec2 start-instances") echo running > "$S/ec2" ;;
-  "ec2 stop-instances") echo stopping > "$S/ec2" ;;
+    case "$*" in *InstanceId*) [ -f "$ec2" ] && echo "$id" || echo None ;; *) cat "$ec2" ;; esac ;;
+  "ec2 start-instances") echo running > "$ec2" ;;
+  "ec2 stop-instances") echo stopping > "$ec2" ;;
+  "ec2 describe-vpcs") echo "${STUB_VPC:-vpc-1}" ;;
+  "ec2 describe-subnets") echo "${STUB_SUBNET:-subnet-1}" ;;
+  "ec2 describe-images") echo "${STUB_AMI:-available}" ;;
+  "ssm get-parameter") [ -f "$S/pointer" ] || missing ParameterNotFound; cat "$S/pointer" ;;
+  "ssm list-command-invocations") cat "$S/monitoring" 2>/dev/null; true ;;
+  "ses get-identity-verification-attributes") echo "${STUB_EMAIL:-Pending}" ;;
   "ec2 wait") ;;
-  "iam get-open-id-connect-provider") [ -f "$S/oidc" ] || missing NoSuchEntity ;;
-  "iam get-role") echo '{"sub": "repo:ana/vantix:environment:production"}' ;;
+  "iam get-open-id-connect-provider") [ -f "$S/oidc" ] || [ -f "$S/oidc.own" ] || missing NoSuchEntity ;;
+  "iam get-role")
+    case "$*" in *github_run_role*) sub="ref:refs/heads/main" ;; *) sub="environment:production" ;; esac
+    echo "{\"sub\": \"repo:ana/vantix:$sub\"}" ;;
   "s3 cp") printf '{\n  "model_version": "3",\n  "k": 5\n}\n' > "${!#}" ;;
   "scheduler get-schedule") [ -f "$S/schedule" ] || missing ResourceNotFoundException; cat "$S/schedule" ;;
   "sagemaker list-pipeline-executions")
@@ -86,25 +98,32 @@ case "$2" in
     exit 0 ;;
   show)
     cat "$S/plan" 2>/dev/null && exit
-    echo "  # aws_iam_openid_connect_provider.github will be created"
+    if [ "$module" = infra.shared ]; then echo "  # aws_iam_openid_connect_provider.github will be created"
+    else echo "  # aws_iam_role.x will be created"; fi
     echo "Plan: 1 to add, 0 to change, 0 to destroy." ;;
   apply)
     [ ! -f "$S/fail.$module" ] || { echo "Error: se cortó"; exit 1; }
     case "$*" in *-target=*) ;; *)
       touch "$S/applied.$module"
       case "$module" in
-        mlflow_server.infra) [ -f "$S/image" ] || exit 1; echo running > "$S/ec2" ;;
+        mlflow_server.infra) [ -f "$S/image.vantix-mlflow" ] || exit 1; echo running > "$S/ec2" ;;
+        monitorization.infra) [ -f "$S/image.vantix-monitoring" ] || exit 1
+          echo running > "$S/ec2.monitoring"; echo abc1234 > "$S/pointer" ;;
         infra.inference) cp "$S/wanted" "$S/schedule"; touch "$S/bucket.vantix-$ACCOUNT_ID-scores" ;;
-        infra.shared) touch "$S/bucket.vantix-$ACCOUNT_ID-data" ;;
+        infra.shared) touch "$S/oidc.own" "$S/bucket.vantix-$ACCOUNT_ID-data" ;;
       esac ;;
     esac
     echo "Apply complete!" ;;
   output)
-    case "$4" in ecr_repository_url) echo "1.dkr.ecr/x"; exit ;; esac
+    case "$4:$module" in
+      ecr_repository_url:monitorization*) echo "1.dkr.ecr/vantix-monitoring"; exit ;;
+      ecr_repository_url:*) echo "1.dkr.ecr/vantix-mlflow"; exit ;;
+    esac
     [ -f "$S/applied.$module" ] || { echo "No outputs found" >&2; exit 1; }
     case "$4" in
       tracking_uri|mlflow_tracking_uri) echo https://mlflow.example.com ;;
-      instance_id) echo i-1 ;;
+      grafana_url) echo https://grafana.example.com ;;
+      instance_id) case "$module" in monitorization*) echo i-2 ;; *) echo i-1 ;; esac ;;
       data_bucket) echo "vantix-$ACCOUNT_ID-data" ;;
       scores_bucket) echo "vantix-$ACCOUNT_ID-scores" ;;
       mlflow_password_param) echo /vantix-mlflow/admin-password ;;
@@ -143,7 +162,9 @@ case "$1 $2" in
   "info ") [ -f "$S/docker" ] ;;
   "buildx version") ;;
   "login "*) cat > /dev/null ;;
-  "buildx build") touch "$S/image"; echo "#5 [1/2] FROM python" ;;
+  "buildx build")
+    case "$*" in *vantix-monitoring*) touch "$S/image.vantix-monitoring" ;; *) touch "$S/image.vantix-mlflow" ;; esac
+    echo "#5 [1/2] FROM python" ;;
 esac
 """,
     "curl": r"""
@@ -154,6 +175,7 @@ while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift ;; https://*) url="$1" ;
 case "$url" in
   *.sha256) echo "$STUB_SHA  data.parquet" > "$out" ;;
   *data.parquet) printf '%s\n' "${STUB_DOWNLOAD:-datos de prueba}" > "$out" ;;
+  */api/health) [ "$(cat "$S/ec2.monitoring" 2>/dev/null)" = running ] && printf 200 || printf 504 ;;
   */health) [ "$(cat "$S/ec2" 2>/dev/null)" = running ] && printf 200 || printf 504 ;;
 esac
 """,
@@ -169,7 +191,9 @@ esac
     "fakepython": r"""
 case "$1" in
   *check_data.py) echo "✔ DATA OK: 1 rows" ;;
-  *upload_raw.py) echo "python $*" >> "$CALLS"; echo "$STUB_SHA" > "$S/lot"; echo "1 filas" ;;
+  *upload_raw.py) echo "python $*" >> "$CALLS"; echo "$STUB_SHA" > "$S/lot"; echo "$7" >> "$S/lots"; echo "1 filas" ;;
+  *make_synthetic_batches.py)
+    for date in "$7" "$9"; do mkdir -p "$5/ingest_date=$date"; touch "$5/ingest_date=$date/data.parquet"; done ;;
   -c) case "$2" in *version_info*) echo "${STUB_PYTHON:-3.11.9}" ;; esac ;;
 esac
 """,
@@ -201,6 +225,10 @@ class Cloud(Sandbox):
         for path in (*folders, "scripts"):
             (self.root / path).mkdir(parents=True)
         (self.root / "mlflow_server/docker/Dockerfile").write_text("FROM x\n")
+        for path in ("monitorization/docker/Dockerfile", "monitorization/src/job.py", "pipelines/common/config.py"):
+            (self.root / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / path).write_text("x\n")
+        shutil.copy(REPO / "monitorization/infra/variables.tf", self.root / "monitorization/infra")
         (self.root / "requirements-dev.txt").write_text("boto3\n")
         shutil.copy(REPO / ".gitignore", self.root)
         self.git("init", "-q", "-b", "main")
@@ -503,7 +531,7 @@ def test_mlflow_que_no_responde(cloud):
 
 
 def test_imagen_nueva_sin_docker(ready):
-    (ready.state / "image").unlink()
+    (ready.state / "image.vantix-mlflow").unlink()
     (ready.state / "docker").unlink()
     ready.command("open", "exit 1")
     rc, out = ready.up()
