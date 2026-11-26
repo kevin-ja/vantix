@@ -1,18 +1,14 @@
 # VANTIX · Makefile
 #
-# Setup (datos en .env: cp .env.example .env)
+# General (datos en .env: cp .env.example .env)
+#   make help | login      esta ayuda · renueva la sesión SSO de AWS
+#   make bootstrap         bucket del estado de Terraform (train-up ya lo hace)
+#
+# 1. Entrenamiento
 #   make train-up          levanta entrenamiento desde cero: herramientas, sesiones, MLflow, infra, datos y GitHub
 #   make train-check       solo lee: qué está listo y qué falta
 #   make train-down        apaga la EC2 de MLflow; no borra nada
-#   make inference-up      levanta inferencia (exige un @champion): bucket de scores, roles, scheduler apagado y GitHub
-#   make inference-check   solo lee · make inference-down   apaga la corrida semanal; no borra nada
-#   make monitoring-up     levanta el monitoreo (exige un @champion): correo, imagen, EC2, Grafana y GitHub
-#   make monitoring-check  solo lee · make monitoring-down   apaga la EC2; no borra nada
-#   make monitoring-sample-batch TIPO=estable|degradado [LOTE=fecha]   lote de prueba (opcional; pregunta antes)
-#   make bootstrap         bucket del estado de Terraform (train-up ya lo hace)
-# MLflow propio (EC2 de mlflow_server/; ~USD 0,03/h encendido, arranca en ~30 s)
-#   make mlflow-start | mlflow-stop | mlflow-status
-# Datos y pipeline de entrenamiento
+#   make mlflow-start | mlflow-stop | mlflow-status   EC2 de MLflow (~USD 0,03/h encendida, arranca en ~30 s)
 #   make get-data          descarga data/data.parquet del GitHub Release (DATA_RELEASE) y lo verifica
 #   make check-data        verifica data/data.parquet (SHA-256 + validación del pipeline)
 #   make upload-data       verifica y sube data/data.parquet a s3://.../raw/ingest_date=$(INGEST_DATE)/
@@ -22,16 +18,23 @@
 #   make rollback VERSION=… REASON="…"   @champion vuelve a una versión anterior y se re-exporta
 #   make promote-export    re-exporta el @champion actual
 #   make benchmark-freeze  copia (una sola vez) el champion v1 a models/benchmark/ (benchmark fijo)
-# Pipeline de inferencia
+#
+# 2. Inferencia
+#   make inference-up      levanta inferencia (exige un @champion): bucket de scores, roles, scheduler apagado y GitHub
+#   make inference-check   solo lee · make inference-down   apaga la corrida semanal; no borra nada
 #   make inference-upsert  crea/actualiza el pipeline en SageMaker
 #   make inference-run     ejecuta el pipeline (fechas "auto" o SCORING_DATE, INF_SNAPSHOT, INF_INGEST)
 #   make schedule-on | schedule-off   activa (pregunta antes) / apaga la corrida semanal
+#
+# 3. Monitoreo
+#   make monitoring-up     levanta el monitoreo (exige un @champion): correo, imagen, EC2, Grafana y GitHub
+#   make monitoring-check  solo lee · make monitoring-down   apaga la EC2; no borra nada
+#   make monitoring-sample-batch TIPO=estable|degradado [LOTE=fecha]   lote de prueba (opcional; pregunta antes)
+#
 # Desarrollo (entorno, tests y lint; lo mismo corre en CI)
 #   make venv | test | lint
-# MLflow propio (mlflow_server/, ver mlflow_server/README.md)
-#   make mlflow-server-<target>   p. ej. mlflow-server-up | -start | -stop | -status | -smoke | -recreate-test
-# Docs
 #   make docs-env | diagrams    venv + Graphviz locales en docs/ -> docs/img/*.png
+#   make mlflow-server-<target>   servidor de MLflow (mlflow_server/README.md), p. ej. mlflow-server-smoke
 
 AWS_PROFILE ?= vantix
 REGION      ?= us-east-1
@@ -54,18 +57,46 @@ export AWS_PROFILE
 ACCOUNT_ID   = $(eval ACCOUNT_ID := $(shell aws sts get-caller-identity --profile $(AWS_PROFILE) --query Account --output text 2>/dev/null))$(ACCOUNT_ID)
 STATE_BUCKET = vantix-$(ACCOUNT_ID)-tfstate
 
-.PHONY: help train-up train-check train-down inference-up inference-check inference-down \
-        monitoring-up monitoring-check monitoring-down monitoring-sample-batch login bootstrap mlflow-stop mlflow-start mlflow-status get-data check-data upload-data pipeline-upsert \
-        pipeline-run check-clean promote rollback promote-export benchmark-freeze inference-upsert inference-run schedule-on schedule-off \
+tf_output = $(shell $(TF) -chdir=$(INFRA)/$(1) output -raw $(2))
+
+.PHONY: help login bootstrap check-clean \
+        train-up train-check train-down mlflow-start mlflow-stop mlflow-status get-data check-data upload-data \
+        pipeline-upsert pipeline-run promote rollback promote-export benchmark-freeze \
+        inference-up inference-check inference-down inference-upsert inference-run schedule-on schedule-off \
+        monitoring-up monitoring-check monitoring-down monitoring-sample-batch \
         venv test lint docs-env diagrams
 
+# =============================================================================
+# General
+# =============================================================================
 help:
-	@sed -n '3,34p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '3,/^$$/p' Makefile | sed 's/^# \{0,1\}//'
 
 login:
 	aws sso login --profile $(AWS_PROFILE)
 
-# --- setup: la lógica vive en setup/ (ver planning-setup.md) --------------------
+# Bucket del estado de Terraform (idempotente).
+bootstrap:
+	@aws s3api head-bucket --bucket $(STATE_BUCKET) 2>/dev/null && echo "state bucket OK: $(STATE_BUCKET)" || { \
+		aws s3api create-bucket --bucket $(STATE_BUCKET) --region $(REGION) && \
+		aws s3api put-bucket-versioning --bucket $(STATE_BUCKET) --versioning-configuration Status=Enabled && \
+		aws s3api put-public-access-block --bucket $(STATE_BUCKET) --public-access-block-configuration \
+			BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true && \
+		echo "state bucket creado: $(STATE_BUCKET)"; }
+
+# Trazabilidad: solo se sube a SageMaker código commiteado y pusheado.
+# El git_commit que registran MLflow y summary.json debe existir en GitHub (docs/arch_mlops.md).
+check-clean:
+	@test -z "$$(git status --porcelain -- pipelines)" || { \
+		echo "Hay cambios sin commitear en pipelines/: haz commit y push antes de correr en AWS"; \
+		git status --short -- pipelines; exit 1; }
+	@git fetch -q origin && git branch -r --contains HEAD | grep -q . || { \
+		echo "El commit $$(git rev-parse --short HEAD) no está en GitHub: haz git push antes de correr en AWS"; exit 1; }
+
+# =============================================================================
+# 1. Entrenamiento
+# =============================================================================
+# --- setup: la lógica vive en setup/ (ver planning-setup.md) ---
 train-up:
 	@bash setup/run.sh up training
 
@@ -75,40 +106,7 @@ train-check:
 train-down:
 	@bash setup/run.sh down training
 
-inference-up:
-	@bash setup/run.sh up inference
-
-inference-check:
-	@bash setup/run.sh check inference
-
-inference-down:
-	@bash setup/run.sh down inference
-
-monitoring-up:
-	@bash setup/run.sh up monitoring
-
-monitoring-check:
-	@bash setup/run.sh check monitoring
-
-monitoring-down:
-	@bash setup/run.sh down monitoring
-
-monitoring-sample-batch:
-	@TIPO="$(TIPO)" LOTE="$(LOTE)" bash setup/run.sh only monitoring 06_sample_batch
-
-# --- helpers -----------------------------------------------------------------
-tf_output = $(shell $(TF) -chdir=$(INFRA)/$(1) output -raw $(2))
-
-# --- bootstrap: bucket del estado de Terraform (idempotente) ---
-bootstrap:
-	@aws s3api head-bucket --bucket $(STATE_BUCKET) 2>/dev/null && echo "state bucket OK: $(STATE_BUCKET)" || { \
-		aws s3api create-bucket --bucket $(STATE_BUCKET) --region $(REGION) && \
-		aws s3api put-bucket-versioning --bucket $(STATE_BUCKET) --versioning-configuration Status=Enabled && \
-		aws s3api put-public-access-block --bucket $(STATE_BUCKET) --public-access-block-configuration \
-			BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true && \
-		echo "state bucket creado: $(STATE_BUCKET)"; }
-
-# --- MLflow propio (mlflow_server/): la EC2 se busca por su tag Name (el id cambia al reemplazarse) ----
+# --- MLflow propio (mlflow_server/): la EC2 se busca por su tag Name (el id cambia al reemplazarse) ---
 MLFLOW_INSTANCE_NAME := vantix-mlflow-server
 MLFLOW_INSTANCE = $(shell aws ec2 describe-instances --profile $(AWS_PROFILE) --region $(REGION) \
 	--filters Name=tag:Name,Values=$(MLFLOW_INSTANCE_NAME) Name=instance-state-name,Values=pending,running,stopping,stopped \
@@ -129,22 +127,7 @@ mlflow-status:
 	@echo "EC2:    $$(aws ec2 describe-instances --instance-ids $(MLFLOW_INSTANCE) --region $(REGION) --query 'Reservations[0].Instances[0].State.Name' --output text)"
 	@echo "MLflow: $$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 $(MLFLOW_URI)/health) (200 = arriba) · $(MLFLOW_URI)"
 
-# --- trazabilidad: solo se sube a SageMaker código commiteado y pusheado ----------------
-# El git_commit que registran MLflow y summary.json debe existir en GitHub (docs/arch_mlops.md).
-check-clean:
-	@test -z "$$(git status --porcelain -- pipelines)" || { \
-		echo "Hay cambios sin commitear en pipelines/: haz commit y push antes de correr en AWS"; \
-		git status --short -- pipelines; exit 1; }
-	@git fetch -q origin && git branch -r --contains HEAD | grep -q . || { \
-		echo "El commit $$(git rev-parse --short HEAD) no está en GitHub: haz git push antes de correr en AWS"; exit 1; }
-
-# --- datos y pipeline ----------------------------------------------------------
-TRAINING_ENV = VANTIX_BUCKET=$(call tf_output,training,data_bucket) \
-               VANTIX_ROLE_ARN=$(call tf_output,training,training_role_arn) \
-               VANTIX_MLFLOW_URI=$(call tf_output,training,mlflow_tracking_uri) \
-               VANTIX_MLFLOW_PASSWORD_PARAM=$(call tf_output,training,mlflow_password_param) \
-               VANTIX_REGION=$(REGION)
-
+# --- datos ---
 # Dataset público: adjunto del GitHub Release $(DATA_RELEASE) del repo original (los forks no copian releases).
 DATA_REPO    ?= kevin-ja/vantix
 DATA_RELEASE ?= data-v1
@@ -168,6 +151,13 @@ upload-data: check-data
 	$(PY) scripts/upload_raw.py --input $(DATA_FILE) --bucket $(call tf_output,shared,data_bucket) \
 		--ingest-date $(INGEST_DATE)
 
+# --- pipeline de entrenamiento y promoción ---
+TRAINING_ENV = VANTIX_BUCKET=$(call tf_output,training,data_bucket) \
+               VANTIX_ROLE_ARN=$(call tf_output,training,training_role_arn) \
+               VANTIX_MLFLOW_URI=$(call tf_output,training,mlflow_tracking_uri) \
+               VANTIX_MLFLOW_PASSWORD_PARAM=$(call tf_output,training,mlflow_password_param) \
+               VANTIX_REGION=$(REGION)
+
 pipeline-upsert: check-clean
 	$(TRAINING_ENV) $(PY) -m pipelines.training.pipeline_sagemaker upsert
 
@@ -188,15 +178,26 @@ rollback:
 		$(PY) -m pipelines.training.promote --version $(VERSION) --reason "$(REASON)" \
 		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
 
-benchmark-freeze:
-	$(PY) scripts/freeze_benchmark.py --bucket $(call tf_output,shared,data_bucket)
-
 promote-export:
 	$(MLFLOW_ENV) \
 		$(PY) -m pipelines.training.promote --export-only \
 		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
 
-# --- pipeline de inferencia ------------------------------------------------------
+benchmark-freeze:
+	$(PY) scripts/freeze_benchmark.py --bucket $(call tf_output,shared,data_bucket)
+
+# =============================================================================
+# 2. Inferencia
+# =============================================================================
+inference-up:
+	@bash setup/run.sh up inference
+
+inference-check:
+	@bash setup/run.sh check inference
+
+inference-down:
+	@bash setup/run.sh down inference
+
 INFERENCE_ENV = VANTIX_BUCKET=$(call tf_output,inference,data_bucket) \
                 VANTIX_SCORES_BUCKET=$(call tf_output,inference,scores_bucket) \
                 VANTIX_ROLE_ARN=$(call tf_output,inference,inference_role_arn) \
@@ -217,7 +218,24 @@ schedule-on:
 schedule-off:
 	@bash setup/run.sh down inference
 
-# --- desarrollo --------------------------------------------------------------
+# =============================================================================
+# 3. Monitoreo
+# =============================================================================
+monitoring-up:
+	@bash setup/run.sh up monitoring
+
+monitoring-check:
+	@bash setup/run.sh check monitoring
+
+monitoring-down:
+	@bash setup/run.sh down monitoring
+
+monitoring-sample-batch:
+	@TIPO="$(TIPO)" LOTE="$(LOTE)" bash setup/run.sh only monitoring 06_sample_batch
+
+# =============================================================================
+# Desarrollo
+# =============================================================================
 venv:
 	uv venv --python 3.11 .venv
 	uv pip install --python $(PY) -r requirements-dev.txt
@@ -229,7 +247,7 @@ lint:
 	.venv/bin/ruff check .
 	$(TF) fmt -check -recursive $(INFRA) mlflow_server/infra
 
-# --- docs: diagramas (todo local al repo: docs/.venv + Graphviz en docs/.tools) ----
+# --- docs: diagramas (todo local al repo: docs/.venv + Graphviz en docs/.tools) ---
 DOCS_PY  := docs/.venv/bin/python
 GRAPHVIZ := docs/.tools/graphviz/bin
 
@@ -245,8 +263,7 @@ diagrams:
 	PATH="$(CURDIR)/$(GRAPHVIZ):$$PATH" $(DOCS_PY) docs/training_pipeline_diagram.py
 	PATH="$(CURDIR)/$(GRAPHVIZ):$$PATH" $(DOCS_PY) docs/inference_pipeline_diagram.py
 
-# --- MLflow propio: delega en mlflow_server/Makefile (autocontenido) ------------------------
+# --- servidor de MLflow: delega en mlflow_server/Makefile (autocontenido) ---
 mlflow-server-%:
 	$(MAKE) -C mlflow_server $* NAME=vantix-mlflow AWS_PROFILE=$(AWS_PROFILE) REGION=$(REGION) \
 		STATE_BUCKET=$(STATE_BUCKET)
-

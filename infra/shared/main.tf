@@ -13,7 +13,7 @@ locals {
 resource "aws_s3_bucket" "data" {
   bucket = local.bucket_name
 
-  # make down-shared exige CONFIRM=yes; sin esto el destroy falla con un bucket versionado no vacío.
+  # Sin esto el destroy falla con un bucket versionado no vacío; ojo: un terraform destroy borra todos los datos.
   force_destroy = true
 }
 

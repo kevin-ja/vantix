@@ -24,7 +24,7 @@ locals {
 resource "aws_s3_bucket" "scores" {
   bucket = "${var.project}-${local.account_id}-scores"
 
-  # Los scores se pueden regenerar: make down-inference los borra.
+  # Los scores se pueden regenerar: un terraform destroy los borra.
   force_destroy = true
 }
 
