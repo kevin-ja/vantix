@@ -13,11 +13,9 @@
 #   make check-data        verifica data/data.parquet (SHA-256 + validación del pipeline)
 #   make upload-data       verifica y sube data/data.parquet a s3://.../raw/ingest_date=$(INGEST_DATE)/
 #   make pipeline-upsert   crea/actualiza el pipeline en SageMaker
-#   make pipeline-run      ejecuta el pipeline (SNAPSHOT_DATE, WINDOW_DAYS, K_MIN, K_MAX)
-#   make promote RUN_ID=… SEGMENT_MAP=segment_maps/… REASON="…"   registra el run hijo como @champion y exporta
-#   make rollback VERSION=… REASON="…"   @champion vuelve a una versión anterior y se re-exporta
+#   (entrenar, promover y rollback: solo por GitHub Actions, con aprobación y registro)
 #   make promote-export    re-exporta el @champion actual
-#   make benchmark-freeze  copia (una sola vez) el champion v1 a models/benchmark/ (benchmark fijo)
+#   make benchmark-freeze  copia (una sola vez) el @champion a models/benchmark/ (benchmark fijo; MLflow encendido)
 #
 # 2. Inferencia
 #   make inference-up      levanta inferencia (exige un @champion): bucket de scores, roles, scheduler apagado y GitHub
@@ -43,10 +41,7 @@ INFRA       := infra
 PY          := .venv/bin/python
 
 INGEST_DATE   ?= 2025-04-30
-SNAPSHOT_DATE ?= 2025-04-30
 WINDOW_DAYS   ?= 30
-K_MIN         ?= 2
-K_MAX         ?= 10
 SCORING_DATE  ?= auto
 INF_SNAPSHOT  ?= auto
 INF_INGEST    ?= auto
@@ -61,7 +56,7 @@ tf_output = $(shell $(TF) -chdir=$(INFRA)/$(1) output -raw $(2))
 
 .PHONY: help login bootstrap check-clean \
         train-up train-check train-down mlflow-start mlflow-stop mlflow-status get-data check-data upload-data \
-        pipeline-upsert pipeline-run promote rollback promote-export benchmark-freeze \
+        pipeline-upsert promote-export benchmark-freeze \
         inference-up inference-check inference-down inference-upsert inference-run schedule-on schedule-off \
         monitoring-up monitoring-check monitoring-down monitoring-sample-batch \
         venv test lint docs-env diagrams
@@ -161,22 +156,8 @@ TRAINING_ENV = VANTIX_BUCKET=$(call tf_output,training,data_bucket) \
 pipeline-upsert: check-clean
 	$(TRAINING_ENV) $(PY) -m pipelines.training.pipeline_sagemaker upsert
 
-pipeline-run: check-clean
-	$(TRAINING_ENV) $(PY) -m pipelines.training.pipeline_sagemaker run \
-		--ingest-date $(INGEST_DATE) --snapshot-date $(SNAPSHOT_DATE) \
-		--window-days $(WINDOW_DAYS) --k-min $(K_MIN) --k-max $(K_MAX)
-
-promote:
-	@test -n "$(RUN_ID)" -a -n "$(SEGMENT_MAP)" -a -n "$(REASON)" || { echo 'Uso: make promote RUN_ID=<run hijo> SEGMENT_MAP=segment_maps/<snapshot>_k<k>.json REASON="…"'; exit 1; }
-	$(MLFLOW_ENV) \
-		$(PY) -m pipelines.training.promote --run-id $(RUN_ID) --segment-map $(SEGMENT_MAP) --reason "$(REASON)" \
-		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
-
-rollback:
-	@test -n "$(VERSION)" -a -n "$(REASON)" || { echo 'Uso: make rollback VERSION=<versión del registry> REASON="…"'; exit 1; }
-	$(MLFLOW_ENV) \
-		$(PY) -m pipelines.training.promote --version $(VERSION) --reason "$(REASON)" \
-		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
+# Entrenar, promover y rollback: solo por GitHub Actions (train_pipeline_manual, promote_best_model_manual,
+# rollback_model_manual), con aprobación del environment production y registro.
 
 promote-export:
 	$(MLFLOW_ENV) \
@@ -184,7 +165,7 @@ promote-export:
 		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
 
 benchmark-freeze:
-	$(PY) scripts/freeze_benchmark.py --bucket $(call tf_output,shared,data_bucket)
+	$(MLFLOW_ENV) $(PY) scripts/freeze_benchmark.py --bucket $(call tf_output,shared,data_bucket)
 
 # =============================================================================
 # 2. Inferencia
