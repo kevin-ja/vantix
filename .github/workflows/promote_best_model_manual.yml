@@ -1,5 +1,5 @@
 # Promoción manual del mejor modelo (docs/arch_mlops.md §5). La decisión la toma un especialista tras evaluar
-# en MLflow contra models/benchmark/; este workflow solo la ejecuta y la deja auditada
+# en MLflow contra el @benchmark (v1); este workflow solo la ejecuta y la deja auditada
 # (tags action, promoted_by, promoted_at, reason, segment_map en la versión del registry).
 # Registra el run elegido como nueva versión @champion y exporta el paquete a models/champion/ (lo usa la inferencia).
 # Volver atrás: rollback_model_manual.yml.
