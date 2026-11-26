@@ -2,7 +2,7 @@
 # el código de main. Enciende el MLflow propio (EC2 de mlflow_server/, ~30 s) si está apagado (el paso Train
 # registra en él), espera a que termine y lo apaga, salvo que se pida dejarlo encendido para evaluar enseguida.
 # Incluye todo el modelado: Prepare (features) → Train (preprocesador + KMeans por k + métricas → MLflow).
-# Después: el especialista evalúa en MLflow contra models/benchmark/ y promueve con promote_best_model_manual.yml.
+# Después: el especialista evalúa en MLflow contra el @benchmark (v1) y promueve con promote_best_model_manual.yml.
 name: train_pipeline_manual
 
 on:

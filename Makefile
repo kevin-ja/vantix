@@ -15,7 +15,6 @@
 #   make pipeline-upsert   crea/actualiza el pipeline en SageMaker
 #   (entrenar, promover y rollback: solo por GitHub Actions, con aprobación y registro)
 #   make promote-export    re-exporta el @champion actual
-#   make benchmark-freeze  copia (una sola vez) el @champion a models/benchmark/ (benchmark fijo; MLflow encendido)
 #
 # 2. Inferencia
 #   make inference-up      levanta inferencia (exige un @champion): bucket de scores, roles, scheduler apagado y GitHub
@@ -56,7 +55,7 @@ tf_output = $(shell $(TF) -chdir=$(INFRA)/$(1) output -raw $(2))
 
 .PHONY: help login bootstrap check-clean \
         train-up train-check train-down mlflow-start mlflow-stop mlflow-status get-data check-data upload-data \
-        pipeline-upsert promote-export benchmark-freeze \
+        pipeline-upsert promote-export \
         inference-up inference-check inference-down inference-upsert inference-run schedule-on schedule-off \
         monitoring-up monitoring-check monitoring-down monitoring-sample-batch \
         venv test lint docs-env diagrams
@@ -163,9 +162,6 @@ promote-export:
 	$(MLFLOW_ENV) \
 		$(PY) -m pipelines.training.promote --export-only \
 		--export-uri s3://$(call tf_output,shared,data_bucket)/models/champion
-
-benchmark-freeze:
-	$(MLFLOW_ENV) $(PY) scripts/freeze_benchmark.py --bucket $(call tf_output,shared,data_bucket)
 
 # =============================================================================
 # 2. Inferencia
