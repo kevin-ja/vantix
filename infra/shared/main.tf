@@ -8,7 +8,7 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# S3: raw/, silver/, models/, pipelines/ (código de los jobs), mlflow/ (artefactos del MLflow viejo, solo lectura histórica)
+# S3: raw/ (lotes crudos), features-rfm/ (features por usuario), models/ (champion), pipelines/ (código de los jobs)
 # ---------------------------------------------------------------------------
 resource "aws_s3_bucket" "data" {
   bucket = local.bucket_name

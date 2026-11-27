@@ -54,7 +54,7 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
          "model_training_entry.py": "pipelines.training.steps.model_training"},
     )
     raw_uri = Join(on="", values=[f"s3://{bucket}/raw/ingest_date=", ingest_date, "/"])
-    silver = Join(on="", values=[f"s3://{bucket}/silver/user_features/snapshot_date=", snapshot_date])
+    features_rfm = Join(on="", values=[f"s3://{bucket}/features-rfm/snapshot_date=", snapshot_date])
     # Une data_processing y model_training en MLflow: data_processing crea el run padre con este tag y
     # model_training lo busca (sin pasar archivos).
     execution_id = ExecutionVariables.PIPELINE_EXECUTION_ID
@@ -83,7 +83,8 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         source_dir=source_dir,
         inputs=[ProcessingInput(source=raw_uri, destination="/opt/ml/processing/input/raw")],
         outputs=[
-            ProcessingOutput(output_name="features", source="/opt/ml/processing/output/features", destination=silver),
+            ProcessingOutput(output_name="features", source="/opt/ml/processing/output/features",
+                             destination=features_rfm),
         ],
         arguments=[
             "--input", "/opt/ml/processing/input/raw",
@@ -92,7 +93,7 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
             "--window-days", window_days.to_string(),
             "--reference-rows", reference_rows.to_string(),
             "--raw-uri", raw_uri,
-            "--features-uri", silver,
+            "--features-uri", features_rfm,
             "--execution-id", execution_id,
         ],
     )
