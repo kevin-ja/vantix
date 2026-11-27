@@ -48,7 +48,7 @@ pipelines/
   common/        config, io, validate, features, transformers (Winsorizer),
                  storage (local/S3), champion (contrato de models/champion/), orchestration  ← training + inference
   training/
-    steps/       prepare.py (Processing job) · train.py (Processing job mientras la cuota de cómputo de AWS SageMaker para Training jobs sea 0)
+    steps/       data_processing.py (Processing job) · model_training.py (Processing job mientras la cuota de cómputo de AWS SageMaker para Training jobs sea 0)
     evaluation.py · promote.py · pipeline_sagemaker.py · requirements.txt
     setup/       paso1.sh … paso11.sh: preparan todo para entrenar, una sola vez (ver su README)
   inference/
@@ -85,7 +85,7 @@ tests/
 |---|---|---|
 | EC2 `t3.small` de MLflow (y la de monitorización) | USD 0,0208/h | mientras está encendida → `make mlflow-stop` al terminar |
 | Elastic IP + disco EBS de cada EC2 | ~USD 5/mes por servidor | siempre, aunque la EC2 esté apagada |
-| Processing `ml.t3.xlarge` (Prepare, Train y Score) | USD 0,20/h | solo mientras corre |
+| Processing `ml.t3.xlarge` (data_processing, model_training y Score) | USD 0,20/h | solo mientras corre |
 | S3 | USD 0,023/GB-mes | por lo guardado |
 
 ## Apagar

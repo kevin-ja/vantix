@@ -6,7 +6,7 @@
 . "$(dirname "${BASH_SOURCE[0]}")/../common/step.sh"
 
 QUOTA_NAME="ml.t3.xlarge for processing job usage"
-QUOTA_MIN=1                  # Prepare y Train corren uno después del otro, cada uno en una máquina
+QUOTA_MIN=1                  # data_processing y model_training corren uno después del otro, cada uno en una máquina
 
 # Lee el environment. Deja en ENV_STATE: falta | corregir | ok.
 ENV_STATE=""; ENV_REVIEWERS=""; ENV_ME=""; ENV_SELF=""; ENV_WAIT=""; ENV_BRANCHES=""
