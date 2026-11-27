@@ -1,7 +1,7 @@
 # Sistema de Entrenamiento
 
-Pipeline `vantix-training` en SageMaker: **Prepare** (features RFM por usuario) → **Train** (preprocesador + KMeans
-por cada k + métricas → MLflow). Después, una persona elige k y **promueve** el run como `@champion`.
+Pipeline `vantix-training` en SageMaker: **data_processing** (features RFM por usuario) → **model_training**
+(preprocesador + KMeans por cada k + métricas → MLflow). Después, una persona elige k y **promueve** el run como `@champion`.
 
 ## 1. Componentes
 ## 2. Funciones de cada componente
@@ -198,7 +198,7 @@ bash pipelines/training/setup/paso6.sh
 ```
 
 **Qué hace:** crea el environment contigo como aprobador y revisa la cuota. Si es 0, ofrece pedir el aumento; AWS decide
-si lo aprueba y cuándo. La cuota de *Training jobs* no hace falta: hoy Train corre como Processing job.
+si lo aprueba y cuándo. La cuota de *Training jobs* no hace falta: hoy model_training corre como Processing job.
 
 ### Paso 7 · Crear el bucket del estado de Terraform
 
@@ -286,7 +286,7 @@ persona la aprueba antes de gastar.
 2. La corrida queda en **Waiting**: ábrela → **Review deployments** → marca `production` → **Approve and deploy**.
 3. Espera (~35 min con k de 2 a 10). El workflow enciende MLflow, crea o actualiza el pipeline `vantix-training` en
    SageMaker, lo ejecuta y espera el resultado.
-4. Si termina en verde, el **Summary** muestra `Prepare` y `Train` en `Succeeded`.
+4. Si termina en verde, el **Summary** muestra `data_processing` y `model_training` en `Succeeded`.
 
 Lo mismo desde la terminal (igual se aprueba en la web):
 
@@ -301,7 +301,7 @@ gh workflow run train_pipeline_manual.yml -R ana/vantix --ref main -f ingest_dat
 | `Could not load credentials` o un valor vacío | faltan variables: [Paso 11](#paso-11--conectar-github-con-aws) |
 | `MLflow no respondió en …` | la URL cambió ([Paso 11](#paso-11--conectar-github-con-aws)) o el servidor no existe ([Paso 8](#paso-8--levantar-mlflow)) |
 | `ResourceLimitExceeded` | cuota de cómputo de AWS SageMaker insuficiente: [Paso 6](#paso-6--environment-production-y-cuota-de-cómputo-de-aws-sagemaker) |
-| Prepare no encuentra datos | `ingest_date` no es el del [Paso 10](#paso-10--subir-el-dataset-a-s3) |
+| data_processing no encuentra datos | `ingest_date` no es el del [Paso 10](#paso-10--subir-el-dataset-a-s3) |
 
 ### Paso 13 · Elegir k y promover
 

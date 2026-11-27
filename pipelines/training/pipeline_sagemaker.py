@@ -34,7 +34,7 @@ from pipelines.common.orchestration import (
 )
 
 PIPELINE_NAME = "vantix-training"
-TRAINING_INSTANCE = "ml.m5.xlarge"     # cuota solicitada: 1 (en revisión; hoy Train usa PROCESSING_INSTANCE)
+TRAINING_INSTANCE = "ml.m5.xlarge"     # cuota solicitada: 1 (en revisión; hoy model_training usa PROCESSING_INSTANCE)
 
 
 def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri: str, mlflow_password_param: str,
@@ -50,11 +50,13 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
 
     source_dir = stage_source(
         REPO / "pipelines" / "training" / "requirements.txt",
-        {"prepare_entry.py": "pipelines.training.steps.prepare", "train_entry.py": "pipelines.training.steps.train"},
+        {"data_processing_entry.py": "pipelines.training.steps.data_processing",
+         "model_training_entry.py": "pipelines.training.steps.model_training"},
     )
     raw_uri = Join(on="", values=[f"s3://{bucket}/raw/ingest_date=", ingest_date, "/"])
     silver = Join(on="", values=[f"s3://{bucket}/silver/user_features/snapshot_date=", snapshot_date])
-    # Une Prepare y Train en MLflow: Prepare crea el run padre con este tag y Train lo busca (sin pasar archivos).
+    # Une data_processing y model_training en MLflow: data_processing crea el run padre con este tag y
+    # model_training lo busca (sin pasar archivos).
     execution_id = ExecutionVariables.PIPELINE_EXECUTION_ID
     # Servidor propio (mlflow_server/): la contraseña se lee de SSM en el job con el rol de ejecución.
     mlflow_env = {
@@ -71,13 +73,13 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         role=role,
         instance_type=PROCESSING_INSTANCE,
         instance_count=1,
-        base_job_name="vantix-prepare",
+        base_job_name="vantix-data-processing",
         sagemaker_session=session,
         code_location=f"s3://{bucket}/pipelines/code",
         env=mlflow_env,
     )
-    prepare_args = processor.run(
-        code="prepare_entry.py",
+    data_processing_args = processor.run(
+        code="data_processing_entry.py",
         source_dir=source_dir,
         inputs=[ProcessingInput(source=raw_uri, destination="/opt/ml/processing/input/raw")],
         outputs=[
@@ -94,7 +96,7 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
             "--execution-id", execution_id,
         ],
     )
-    step_prepare = ProcessingStep(name="Prepare", step_args=prepare_args)
+    step_data_processing = ProcessingStep(name="data_processing", step_args=data_processing_args)
 
     # 5-7. Preprocesamiento (fit) -> KMeans por k -> evaluación -> MLflow.
     # Corre como Processing job (ml.t3.xlarge) mientras la cuota de training jobs sea 0; mismo train.py.
@@ -105,15 +107,15 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         role=role,
         instance_type=PROCESSING_INSTANCE,
         instance_count=1,
-        base_job_name="vantix-train",
+        base_job_name="vantix-model-training",
         sagemaker_session=session,
         code_location=f"s3://{bucket}/pipelines/code",
         env=mlflow_env,
     )
-    outputs = step_prepare.properties.ProcessingOutputConfig.Outputs
+    outputs = step_data_processing.properties.ProcessingOutputConfig.Outputs
     train_out = Join(on="", values=[f"s3://{bucket}/pipelines/training-output/snapshot_date=", snapshot_date])
-    train_args = trainer.run(
-        code="train_entry.py",
+    model_training_args = trainer.run(
+        code="model_training_entry.py",
         source_dir=source_dir,
         inputs=[
             ProcessingInput(source=outputs["features"].S3Output.S3Uri, destination="/opt/ml/processing/input/features"),
@@ -129,12 +131,12 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
             "--git-commit", commit,
         ],
     )
-    step_train = ProcessingStep(name="Train", step_args=train_args)
+    step_model_training = ProcessingStep(name="model_training", step_args=model_training_args)
 
     return Pipeline(
         name=PIPELINE_NAME,
         parameters=[ingest_date, snapshot_date, window_days, reference_rows, k_min, k_max, commit],
-        steps=[step_prepare, step_train],
+        steps=[step_data_processing, step_model_training],
         sagemaker_session=session,
     )
 

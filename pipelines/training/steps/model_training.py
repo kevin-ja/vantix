@@ -1,7 +1,7 @@
 """Paso 5-7 (Training job): preprocesamiento (fit) -> KMeans por k -> evaluación -> MLflow.
 
 MLflow:
-  run padre (uno por corrida): lo crea Prepare con la metadata de los datos; Train lo busca por el tag
+  run padre (uno por corrida): lo crea data_processing con la metadata de los datos; model_training lo busca por el tag
                                pipeline_execution_id (= --execution-id), sigue en él y agrega git_commit y k_min/k_max
   run hijo  (uno por k):       k, métricas, perfil de clusters, preprocessor.pkl y model (KMeans)
 
@@ -34,9 +34,9 @@ from pipelines.common.io import resolve_input  # noqa: E402
 from pipelines.common.mlflow_auth import configure_credentials  # noqa: E402
 from pipelines.common.transformers import build_preprocessor  # noqa: E402
 from pipelines.training.evaluation import cluster_profile, clustering_metrics  # noqa: E402
-from pipelines.training.steps.prepare import EXECUTION_TAG  # noqa: E402
+from pipelines.training.steps.data_processing import EXECUTION_TAG  # noqa: E402
 
-log = logging.getLogger("train")
+log = logging.getLogger("model_training")
 EXPERIMENT = "vantix-segmentation"
 
 
@@ -51,7 +51,8 @@ def log_sklearn_model(model, name: str) -> None:
 def parse_args(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--features-dir", default=os.environ.get("SM_CHANNEL_FEATURES"))
-    p.add_argument("--execution-id", required=True, help="Id de la ejecución del pipeline (une Prepare y Train)")
+    p.add_argument("--execution-id", required=True,
+                   help="Id de la ejecución del pipeline (une data_processing y model_training)")
     p.add_argument("--model-dir", default=os.environ.get("SM_MODEL_DIR", ".local/model"))
     p.add_argument("--tracking-uri", default=os.environ.get("MLFLOW_TRACKING_URI"))
     p.add_argument("--experiment", default=EXPERIMENT)
@@ -64,12 +65,12 @@ def parse_args(argv=None):
 
 
 def find_parent_run(experiment: str, execution_id: str) -> str:
-    """Run padre que creó Prepare en esta misma ejecución del pipeline."""
+    """Run padre que creó data_processing en esta misma ejecución del pipeline."""
     exp = mlflow.get_experiment_by_name(experiment)
     runs = [] if exp is None else mlflow.search_runs(
         [exp.experiment_id], filter_string=f"tags.{EXECUTION_TAG} = '{execution_id}'", output_format="list")
     if len(runs) != 1:
-        raise RuntimeError(f"Se esperaba 1 run de Prepare con {EXECUTION_TAG}={execution_id} y hay {len(runs)}")
+        raise RuntimeError(f"Se esperaba 1 run de data_processing con {EXECUTION_TAG}={execution_id} y hay {len(runs)}")
     return runs[0].info.run_id
 
 
@@ -98,7 +99,7 @@ def main(argv=None) -> None:
     joblib.dump(preprocessor, pre_path)
 
     summary = []
-    with mlflow.start_run(run_id=parent_id) as parent:   # el de Prepare: ya tiene la metadata de los datos
+    with mlflow.start_run(run_id=parent_id) as parent:   # el de data_processing: ya tiene la metadata de los datos
         mlflow.log_params({
             "git_commit": a.git_commit,
             "k_min": a.k_min,

@@ -144,7 +144,7 @@ resource "aws_iam_role_policy" "github_pipeline" {
   policy   = data.aws_iam_policy_document.github_pipeline[each.key].json
 }
 
-# train_pipeline_manual.yml enciende el MLflow propio si está apagado (el paso Train registra en él) y lo apaga al terminar.
+# train_pipeline_manual.yml enciende el MLflow propio si está apagado (data_processing y model_training registran en él) y lo apaga al terminar.
 resource "aws_iam_role_policy" "github_train_mlflow" {
   name   = "mlflow-power"
   role   = aws_iam_role.github_pipeline["train"].id

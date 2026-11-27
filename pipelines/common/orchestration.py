@@ -34,7 +34,7 @@ def git_commit() -> str:
 def stage_source(requirements: Path, entries: dict[str, str]) -> str:
     """Directorio con el paquete `pipelines/`, requirements.txt y un entrypoint por job.
 
-    entries: {"prepare_entry.py": "pipelines.training.steps.prepare", ...}
+    entries: {"data_processing_entry.py": "pipelines.training.steps.data_processing", ...}
     """
     stage = Path(tempfile.mkdtemp(prefix="vantix-src-"))
     shutil.copytree(REPO / "pipelines", stage / "pipelines",

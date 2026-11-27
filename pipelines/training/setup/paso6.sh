@@ -19,7 +19,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)" || exit 1
 ENVIRONMENT="production"     # fijo: lo exigen los workflows y los roles de AWS
 REGION="us-east-1"           # fija en los workflows
 QUOTA_NAME="ml.t3.xlarge for processing job usage"
-QUOTA_MIN=1                  # Prepare y Train corren uno después del otro, cada uno en una máquina
+QUOTA_MIN=1                  # data_processing y model_training corren uno después del otro, cada uno en una máquina
 REPO=""
 PROFILE="vantix"
 

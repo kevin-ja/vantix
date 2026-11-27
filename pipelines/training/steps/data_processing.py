@@ -3,10 +3,10 @@
 SageMaker:  --input /opt/ml/processing/input/raw --output-dir /opt/ml/processing/output --execution-id <id>
 
 Salidas:
-  <output-dir>/features/user_features.parquet   (las lee el paso Train)
+  <output-dir>/features/user_features.parquet   (las lee el paso model_training)
   MLflow: crea el run padre de la corrida y registra la metadata de los datos (origen, hashes, ventana, conteos)
           como parámetros, data/metadata.json y dataset de entrada. Lo etiqueta con el id de la ejecución del
-          pipeline (tag pipeline_execution_id): así Train encuentra el run y sigue en él, sin pasar archivos.
+          pipeline (tag pipeline_execution_id): así model_training encuentra el run y sigue en él, sin pasar archivos.
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from pipelines.common.io import read_raw, resolve_input, sha256_file  # noqa: E4
 from pipelines.common.mlflow_auth import configure_credentials  # noqa: E402
 from pipelines.common.validate import validate  # noqa: E402
 
-log = logging.getLogger("prepare")
+log = logging.getLogger("data_processing")
 EXPERIMENT = "vantix-segmentation"
 EXECUTION_TAG = "pipeline_execution_id"
 
@@ -45,7 +45,8 @@ def parse_args(argv=None):
                    help="Filas de la corrida anterior (0 = no validar volumen)")
     p.add_argument("--raw-uri", default="", help="URI de origen, solo para trazabilidad")
     p.add_argument("--features-uri", default="", help="URI de destino de las features, solo para trazabilidad")
-    p.add_argument("--execution-id", required=True, help="Id de la ejecución del pipeline (une Prepare y Train)")
+    p.add_argument("--execution-id", required=True,
+                   help="Id de la ejecución del pipeline (une data_processing y model_training)")
     p.add_argument("--tracking-uri", default=os.environ.get("MLFLOW_TRACKING_URI"))
     p.add_argument("--experiment", default=EXPERIMENT)
     return p.parse_args(argv)

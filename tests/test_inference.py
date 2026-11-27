@@ -104,7 +104,7 @@ def test_missing_artifact_fails(champion_dir):
 def test_promote_exports_champion(tmp_path):
     mlflow = pytest.importorskip("mlflow")
     from pipelines.training import promote
-    from pipelines.training.steps.train import log_sklearn_model
+    from pipelines.training.steps.model_training import log_sklearn_model
 
     uri = f"sqlite:///{tmp_path / 'mlflow.db'}"
     mlflow.set_tracking_uri(uri)
