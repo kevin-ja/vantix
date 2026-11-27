@@ -54,7 +54,7 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
          "model_training_entry.py": "pipelines.training.steps.model_training"},
     )
     raw_uri = Join(on="", values=[f"s3://{bucket}/raw/ingest_date=", ingest_date, "/"])
-    silver = Join(on="", values=[f"s3://{bucket}/silver/user_features/snapshot_date=", snapshot_date])
+    features_rfm = Join(on="", values=[f"s3://{bucket}/features-rfm/snapshot_date=", snapshot_date])
     # Une data_processing y model_training en MLflow: data_processing crea el run padre con este tag y
     # model_training lo busca (sin pasar archivos).
     execution_id = ExecutionVariables.PIPELINE_EXECUTION_ID
@@ -75,7 +75,7 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         instance_count=1,
         base_job_name="vantix-data-processing",
         sagemaker_session=session,
-        code_location=f"s3://{bucket}/pipelines/code",
+        code_location=f"s3://{bucket}/pipelines",
         env=mlflow_env,
     )
     data_processing_args = processor.run(
@@ -83,7 +83,8 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         source_dir=source_dir,
         inputs=[ProcessingInput(source=raw_uri, destination="/opt/ml/processing/input/raw")],
         outputs=[
-            ProcessingOutput(output_name="features", source="/opt/ml/processing/output/features", destination=silver),
+            ProcessingOutput(output_name="features", source="/opt/ml/processing/output/features",
+                             destination=features_rfm),
         ],
         arguments=[
             "--input", "/opt/ml/processing/input/raw",
@@ -92,7 +93,7 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
             "--window-days", window_days.to_string(),
             "--reference-rows", reference_rows.to_string(),
             "--raw-uri", raw_uri,
-            "--features-uri", silver,
+            "--features-uri", features_rfm,
             "--execution-id", execution_id,
         ],
     )
@@ -109,23 +110,19 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         instance_count=1,
         base_job_name="vantix-model-training",
         sagemaker_session=session,
-        code_location=f"s3://{bucket}/pipelines/code",
+        code_location=f"s3://{bucket}/pipelines",
         env=mlflow_env,
     )
     outputs = step_data_processing.properties.ProcessingOutputConfig.Outputs
-    train_out = Join(on="", values=[f"s3://{bucket}/pipelines/training-output/snapshot_date=", snapshot_date])
     model_training_args = trainer.run(
         code="model_training_entry.py",
         source_dir=source_dir,
         inputs=[
             ProcessingInput(source=outputs["features"].S3Output.S3Uri, destination="/opt/ml/processing/input/features"),
         ],
-        outputs=[ProcessingOutput(output_name="summary", source="/opt/ml/processing/output/model",
-                                  destination=train_out)],
         arguments=[
             "--features-dir", "/opt/ml/processing/input/features",
             "--execution-id", execution_id,
-            "--model-dir", "/opt/ml/processing/output/model",
             "--k-min", k_min.to_string(),
             "--k-max", k_max.to_string(),
             "--git-commit", commit,
