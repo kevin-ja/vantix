@@ -41,6 +41,4 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
   }
 }
 
-# MLflow: servidor propio en mlflow_server/ (ver mlflow.tf). El MLflow administrado de SageMaker se dio de baja
-# el 2026-11-18 tras migrar su registry; sus artefactos viejos siguen en s3://…/mlflow/ (mapa de IDs en
-# s3://…/mlflow-migration/).
+# MLflow: servidor propio en mlflow_server/ (ver mlflow.tf), con sus artefactos en su propio bucket.

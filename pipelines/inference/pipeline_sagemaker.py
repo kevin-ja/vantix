@@ -57,7 +57,7 @@ def build_pipeline(session: PipelineSession, bucket: str, scores_bucket: str, ro
         instance_count=1,
         base_job_name="vantix-score",
         sagemaker_session=session,
-        code_location=f"s3://{bucket}/pipelines/code",
+        code_location=f"s3://{bucket}/pipelines",
         env={"AWS_DEFAULT_REGION": region, "GIT_COMMIT": commit},
     )
     # Sin ProcessingInput/Output: score.py lee y escribe S3 él mismo para escribir latest.json al final.

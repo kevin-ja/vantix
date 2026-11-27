@@ -75,7 +75,7 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         instance_count=1,
         base_job_name="vantix-data-processing",
         sagemaker_session=session,
-        code_location=f"s3://{bucket}/pipelines/code",
+        code_location=f"s3://{bucket}/pipelines",
         env=mlflow_env,
     )
     data_processing_args = processor.run(
@@ -109,23 +109,19 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         instance_count=1,
         base_job_name="vantix-model-training",
         sagemaker_session=session,
-        code_location=f"s3://{bucket}/pipelines/code",
+        code_location=f"s3://{bucket}/pipelines",
         env=mlflow_env,
     )
     outputs = step_data_processing.properties.ProcessingOutputConfig.Outputs
-    train_out = Join(on="", values=[f"s3://{bucket}/pipelines/training-output/snapshot_date=", snapshot_date])
     model_training_args = trainer.run(
         code="model_training_entry.py",
         source_dir=source_dir,
         inputs=[
             ProcessingInput(source=outputs["features"].S3Output.S3Uri, destination="/opt/ml/processing/input/features"),
         ],
-        outputs=[ProcessingOutput(output_name="summary", source="/opt/ml/processing/output/model",
-                                  destination=train_out)],
         arguments=[
             "--features-dir", "/opt/ml/processing/input/features",
             "--execution-id", execution_id,
-            "--model-dir", "/opt/ml/processing/output/model",
             "--k-min", k_min.to_string(),
             "--k-max", k_max.to_string(),
             "--git-commit", commit,

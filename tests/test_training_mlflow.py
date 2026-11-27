@@ -41,7 +41,7 @@ def test_data_processing_y_model_training_comparten_el_run_padre(tmp_path, raw_d
     assert parent.data.params["n_users"] == "3" and len(parent.data.params["raw_sha256"]) == 64
     assert [d.dataset.name for d in parent.inputs.dataset_inputs] == ["user_features"]
 
-    model_training.main(["--features-dir", str(out / "features"), "--model-dir", str(tmp_path / "model"),
+    model_training.main(["--features-dir", str(out / "features"),
                          "--execution-id", "exec-1", "--k-min", "2", "--k-max", "2", "--git-commit", "abc123"])
 
     all_runs = {r.info.run_id: r for r in runs()}
@@ -56,5 +56,5 @@ def test_data_processing_y_model_training_comparten_el_run_padre(tmp_path, raw_d
 def test_model_training_sin_run_de_data_processing_falla(tmp_path, raw_df, tracking):
     out = run_data_processing(tmp_path, raw_df, "exec-1")
     with pytest.raises(RuntimeError, match="exec-2"):
-        model_training.main(["--features-dir", str(out / "features"), "--model-dir", str(tmp_path / "model"),
+        model_training.main(["--features-dir", str(out / "features"),
                              "--execution-id", "exec-2", "--k-min", "2", "--k-max", "2"])

@@ -53,7 +53,6 @@ def parse_args(argv=None):
     p.add_argument("--features-dir", default=os.environ.get("SM_CHANNEL_FEATURES"))
     p.add_argument("--execution-id", required=True,
                    help="Id de la ejecución del pipeline (une data_processing y model_training)")
-    p.add_argument("--model-dir", default=os.environ.get("SM_MODEL_DIR", ".local/model"))
     p.add_argument("--tracking-uri", default=os.environ.get("MLFLOW_TRACKING_URI"))
     p.add_argument("--experiment", default=EXPERIMENT)
     p.add_argument("--k-min", type=int, default=2)
@@ -137,8 +136,6 @@ def main(argv=None) -> None:
         summary_df.to_csv(sum_path, index=False)
         mlflow.log_artifact(str(sum_path))
 
-    Path(a.model_dir).mkdir(parents=True, exist_ok=True)
-    summary_df.to_csv(Path(a.model_dir) / "k_summary.csv", index=False)
     log.info("run padre %s\n%s", parent.info.run_id, summary_df.to_string(index=False))
 
 
