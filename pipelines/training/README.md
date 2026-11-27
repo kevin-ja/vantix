@@ -4,8 +4,65 @@ Pipeline `vantix-training` en SageMaker: **data_processing** (features RFM por u
 (preprocesador + KMeans por cada k + métricas → MLflow). Después, una persona elige k y **promueve** el run como `@champion`.
 
 ## 1. Componentes
-## 2. Funciones de cada componente
-## 3. Relacion entre los componentes
+
+| Componente | Qué es |
+|---|---|
+| **Fuente de datos** | Las apuestas históricas, por lote (`raw/`) |
+| **Motor de entrenamiento** | SageMaker: procesa los datos (`data_processing`) y entrena el modelo (`model_training`) |
+| **Feature Storage** | La tabla de features por usuario (`features-rfm/`); cumple el rol de un feature store offline |
+| **MLflow** | Registra cada entrenamiento (métricas, metadatos, artefactos) y marca el modelo en uso (`@champion`) |
+| **Almacén de modelos** | Todos los modelos registrados (bucket de MLflow) y el publicado para inferencia (`models/champion/`) |
+
+### Recursos de AWS asignados a cada componente
+
+| Componente | Recursos de AWS |
+|---|---|
+| **Fuente de datos** | 1. S3 `vantix-<cuenta>-data/raw/` (versionado, cifrado, sin acceso público) |
+| **Motor de entrenamiento** | 1. SageMaker Pipelines (`vantix-training`)<br>2. Processing jobs `ml.t3.xlarge` (contenedor scikit-learn 1.4-2, red administrada por SageMaker)<br>3. S3 `vantix-<cuenta>-data/pipelines/` (código de los jobs)<br>4. IAM: rol de ejecución `vantix-training-exec`<br>5. CloudWatch Logs `/aws/sagemaker/ProcessingJobs` |
+| **Feature Storage** | 1. S3 `vantix-<cuenta>-data/features-rfm/` |
+| **MLflow** | 1. EC2 `t3.small` con Docker (disco EBS de 16 GB), acceso por SSM (sin SSH)<br>2. Elastic IP<br>3. VPC y subred por defecto + security group (solo acepta a CloudFront)<br>4. CloudFront (HTTPS)<br>5. ECR (imagen del servidor)<br>6. SSM Parameter Store (contraseña y clave)<br>7. IAM: rol de la EC2<br>8. S3 `vantix-mlflow-<cuenta>/registry/` (respaldo de su base de datos y de sus usuarios) |
+| **Almacén de modelos** | 1. S3 `vantix-mlflow-<cuenta>/artifacts/` (todos los modelos; cifrado, sin acceso público, **sin versionado**)<br>2. S3 `vantix-<cuenta>-data/models/champion/` (el publicado) |
+
+## 2. Función de cada componente
+
+| Componente | Función |
+|---|---|
+| **Fuente de datos** | Guarda cada lote de apuestas tal como llega, en su propia carpeta y sin modificarlo. Es el punto de partida de todo entrenamiento. |
+| **Motor de entrenamiento** | Ejecuta el entrenamiento bajo demanda: enciende el cómputo, corre los dos pasos y lo apaga.<br>1. **`data_processing`**: valida el lote, limpia duplicados y calcula las features RFM de cada usuario en una ventana de 30 días.<br>2. **`model_training`**: escala las features y entrena un modelo KMeans por cada k del rango, con sus métricas de calidad. |
+| **Feature Storage** | Conserva la tabla de features de cada fecha de corte. Separa el procesamiento del entrenamiento y deja registro de con qué datos exactos se entrenó. |
+| **MLflow** | Registra cada entrenamiento (datos usados, parámetros, métricas y artefactos) para comparar los k y elegir el mejor. Lleva las versiones de los modelos y marca cuál está en uso (`@champion`). |
+| **Almacén de modelos** | Conserva todos los modelos entrenados, lo que permite volver a uno anterior. Publica el modelo en uso como un paquete listo para la inferencia, que lo lee sin depender de MLflow. |
+## 3. Relación entre los componentes
+
+```mermaid
+flowchart LR
+    SRC[("Fuente de datos<br/>raw/")]
+    subgraph MOTOR["Motor de entrenamiento (SageMaker)"]
+        DP["data_processing"]
+        MT["model_training"]
+    end
+    FS[("Feature Storage<br/>features-rfm/")]
+    ML["MLflow<br/>registro de entrenamientos<br/>y versiones de modelos"]
+    subgraph MS["Almacén de modelos"]
+        ART[("Todos los modelos<br/>bucket de MLflow")]
+        CH[("Modelo en uso<br/>models/champion/")]
+    end
+    INF(["Inferencia<br/>(otro sistema)"])
+
+    SRC -->|lote crudo| DP
+    DP -->|features| FS
+    FS -->|features| MT
+    DP -->|metadata de los datos| ML
+    MT -->|parámetros, métricas y modelos| ML
+    ML -->|guarda los artefactos| ART
+    ML -.->|promoción @champion| CH
+    CH -.->|lee el modelo| INF
+
+    classDef externo fill:#eee,stroke:#999,color:#555,stroke-dasharray: 4 3
+    class INF externo
+```
+
+Línea continua: lo hace cada entrenamiento. Línea punteada: ocurre solo cuando una persona promueve un modelo.
 ## 4. Pipeline de Entrenamiento
 ## 5. MLOps 
 
