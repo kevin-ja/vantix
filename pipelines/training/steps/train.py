@@ -1,10 +1,11 @@
 """Paso 5-7 (Training job): preprocesamiento (fit) -> KMeans por k -> evaluación -> MLflow.
 
 MLflow:
-  run padre (uno por corrida): snapshot_date, window_days, git_commit, hashes de datos
+  run padre (uno por corrida): lo crea Prepare con la metadata de los datos; Train lo busca por el tag
+                               pipeline_execution_id (= --execution-id), sigue en él y agrega git_commit y k_min/k_max
   run hijo  (uno por k):       k, métricas, perfil de clusters, preprocessor.pkl y model (KMeans)
 
-SageMaker:  canales SM_CHANNEL_FEATURES / SM_CHANNEL_METADATA, MLFLOW_TRACKING_URI (URL del servidor propio) y
+SageMaker:  canal SM_CHANNEL_FEATURES, --execution-id, MLFLOW_TRACKING_URI (URL del servidor propio) y
             MLFLOW_TRACKING_PASSWORD_PARAM (parámetro SSM con la contraseña; ver pipelines/common/mlflow_auth.py).
 """
 from __future__ import annotations
@@ -17,7 +18,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import argparse  # noqa: E402
-import json  # noqa: E402
 import logging  # noqa: E402
 import os  # noqa: E402
 import tempfile  # noqa: E402
@@ -34,6 +34,7 @@ from pipelines.common.io import resolve_input  # noqa: E402
 from pipelines.common.mlflow_auth import configure_credentials  # noqa: E402
 from pipelines.common.transformers import build_preprocessor  # noqa: E402
 from pipelines.training.evaluation import cluster_profile, clustering_metrics  # noqa: E402
+from pipelines.training.steps.prepare import EXECUTION_TAG  # noqa: E402
 
 log = logging.getLogger("train")
 EXPERIMENT = "vantix-segmentation"
@@ -50,7 +51,7 @@ def log_sklearn_model(model, name: str) -> None:
 def parse_args(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--features-dir", default=os.environ.get("SM_CHANNEL_FEATURES"))
-    p.add_argument("--metadata-dir", default=os.environ.get("SM_CHANNEL_METADATA"))
+    p.add_argument("--execution-id", required=True, help="Id de la ejecución del pipeline (une Prepare y Train)")
     p.add_argument("--model-dir", default=os.environ.get("SM_MODEL_DIR", ".local/model"))
     p.add_argument("--tracking-uri", default=os.environ.get("MLFLOW_TRACKING_URI"))
     p.add_argument("--experiment", default=EXPERIMENT)
@@ -62,6 +63,16 @@ def parse_args(argv=None):
     return p.parse_args(argv)
 
 
+def find_parent_run(experiment: str, execution_id: str) -> str:
+    """Run padre que creó Prepare en esta misma ejecución del pipeline."""
+    exp = mlflow.get_experiment_by_name(experiment)
+    runs = [] if exp is None else mlflow.search_runs(
+        [exp.experiment_id], filter_string=f"tags.{EXECUTION_TAG} = '{execution_id}'", output_format="list")
+    if len(runs) != 1:
+        raise RuntimeError(f"Se esperaba 1 run de Prepare con {EXECUTION_TAG}={execution_id} y hay {len(runs)}")
+    return runs[0].info.run_id
+
+
 def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     a = parse_args(argv)
@@ -69,7 +80,6 @@ def main(argv=None) -> None:
         raise ValueError("Falta --tracking-uri o MLFLOW_TRACKING_URI")
 
     features = pd.read_parquet(resolve_input(a.features_dir))
-    metadata = json.loads((Path(a.metadata_dir) / "metadata.json").read_text())
     X = features[FEATURE_COLS]
 
     # 5. Preprocesamiento: se ajusta una sola vez (no depende de k).
@@ -80,29 +90,23 @@ def main(argv=None) -> None:
     configure_credentials(a.tracking_uri)
     mlflow.set_tracking_uri(a.tracking_uri)
     mlflow.set_experiment(a.experiment)
+    parent_id = find_parent_run(a.experiment, a.execution_id)
+    snapshot_date = mlflow.get_run(parent_id).data.params["snapshot_date"]
 
     tmp = Path(tempfile.mkdtemp())
     pre_path = tmp / "preprocessor.pkl"
     joblib.dump(preprocessor, pre_path)
 
     summary = []
-    run_name = f"snapshot={metadata['snapshot_date']}"
-    with mlflow.start_run(run_name=run_name) as parent:
+    with mlflow.start_run(run_id=parent_id) as parent:   # el de Prepare: ya tiene la metadata de los datos
         mlflow.log_params({
-            "snapshot_date": metadata["snapshot_date"],
-            "window_days": metadata["window_days"],
             "git_commit": a.git_commit,
             "k_min": a.k_min,
             "k_max": a.k_max,
             "random_state": a.random_state,
             "n_init": a.n_init,
-            "n_users": metadata["n_users"],
-            "raw_uri": metadata["raw_uri"],
-            "raw_sha256": metadata["raw_sha256"],
-            "features_sha256": metadata["features_sha256"],
         })
         mlflow.set_tag("git_commit", a.git_commit)
-        mlflow.log_dict(metadata, "data/metadata.json")
 
         # 6-7. KMeans por k + evaluación con el 100 % de las observaciones.
         for k in range(a.k_min, a.k_max + 1):
@@ -112,7 +116,7 @@ def main(argv=None) -> None:
                 metrics = clustering_metrics(Xt, model.labels_, model.inertia_)
                 profile = cluster_profile(features, model.labels_)
 
-                mlflow.log_params({"k": k, "snapshot_date": metadata["snapshot_date"],
+                mlflow.log_params({"k": k, "snapshot_date": snapshot_date,
                                    "git_commit": a.git_commit})
                 mlflow.set_tag("git_commit", a.git_commit)
                 mlflow.log_metrics({**metrics, "min_cluster_pct": float(profile["pct_users"].min()),

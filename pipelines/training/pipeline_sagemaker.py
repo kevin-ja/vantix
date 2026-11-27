@@ -17,6 +17,7 @@ import os
 import boto3
 from sagemaker.processing import FrameworkProcessor, ProcessingInput, ProcessingOutput
 from sagemaker.sklearn.estimator import SKLearn
+from sagemaker.workflow.execution_variables import ExecutionVariables
 from sagemaker.workflow.functions import Join
 from sagemaker.workflow.parameters import ParameterInteger, ParameterString
 from sagemaker.workflow.pipeline import Pipeline
@@ -53,9 +54,17 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
     )
     raw_uri = Join(on="", values=[f"s3://{bucket}/raw/ingest_date=", ingest_date, "/"])
     silver = Join(on="", values=[f"s3://{bucket}/silver/user_features/snapshot_date=", snapshot_date])
-    meta = Join(on="", values=[f"s3://{bucket}/silver/metadata/snapshot_date=", snapshot_date])
+    # Une Prepare y Train en MLflow: Prepare crea el run padre con este tag y Train lo busca (sin pasar archivos).
+    execution_id = ExecutionVariables.PIPELINE_EXECUTION_ID
+    # Servidor propio (mlflow_server/): la contraseña se lee de SSM en el job con el rol de ejecución.
+    mlflow_env = {
+        "MLFLOW_TRACKING_URI": mlflow_uri,
+        "MLFLOW_TRACKING_USERNAME": "admin",
+        "MLFLOW_TRACKING_PASSWORD_PARAM": mlflow_password_param,
+        "AWS_DEFAULT_REGION": region,
+    }
 
-    # 1-4. Processing job: ingesta -> validación -> limpieza -> features
+    # 1-4. Processing job: ingesta -> validación -> limpieza -> features (+ metadata de los datos en MLflow)
     processor = FrameworkProcessor(
         estimator_cls=SKLearn,
         framework_version=SKLEARN_VERSION,
@@ -65,6 +74,7 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         base_job_name="vantix-prepare",
         sagemaker_session=session,
         code_location=f"s3://{bucket}/pipelines/code",
+        env=mlflow_env,
     )
     prepare_args = processor.run(
         code="prepare_entry.py",
@@ -72,7 +82,6 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         inputs=[ProcessingInput(source=raw_uri, destination="/opt/ml/processing/input/raw")],
         outputs=[
             ProcessingOutput(output_name="features", source="/opt/ml/processing/output/features", destination=silver),
-            ProcessingOutput(output_name="metadata", source="/opt/ml/processing/output/metadata", destination=meta),
         ],
         arguments=[
             "--input", "/opt/ml/processing/input/raw",
@@ -81,6 +90,8 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
             "--window-days", window_days.to_string(),
             "--reference-rows", reference_rows.to_string(),
             "--raw-uri", raw_uri,
+            "--features-uri", silver,
+            "--execution-id", execution_id,
         ],
     )
     step_prepare = ProcessingStep(name="Prepare", step_args=prepare_args)
@@ -97,13 +108,7 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         base_job_name="vantix-train",
         sagemaker_session=session,
         code_location=f"s3://{bucket}/pipelines/code",
-        # Servidor propio (mlflow_server/): la contraseña se lee de SSM en el job con el rol de ejecución.
-        env={
-            "MLFLOW_TRACKING_URI": mlflow_uri,
-            "MLFLOW_TRACKING_USERNAME": "admin",
-            "MLFLOW_TRACKING_PASSWORD_PARAM": mlflow_password_param,
-            "AWS_DEFAULT_REGION": region,
-        },
+        env=mlflow_env,
     )
     outputs = step_prepare.properties.ProcessingOutputConfig.Outputs
     train_out = Join(on="", values=[f"s3://{bucket}/pipelines/training-output/snapshot_date=", snapshot_date])
@@ -112,13 +117,12 @@ def build_pipeline(session: PipelineSession, bucket: str, role: str, mlflow_uri:
         source_dir=source_dir,
         inputs=[
             ProcessingInput(source=outputs["features"].S3Output.S3Uri, destination="/opt/ml/processing/input/features"),
-            ProcessingInput(source=outputs["metadata"].S3Output.S3Uri, destination="/opt/ml/processing/input/metadata"),
         ],
         outputs=[ProcessingOutput(output_name="summary", source="/opt/ml/processing/output/model",
                                   destination=train_out)],
         arguments=[
             "--features-dir", "/opt/ml/processing/input/features",
-            "--metadata-dir", "/opt/ml/processing/input/metadata",
+            "--execution-id", execution_id,
             "--model-dir", "/opt/ml/processing/output/model",
             "--k-min", k_min.to_string(),
             "--k-max", k_max.to_string(),
